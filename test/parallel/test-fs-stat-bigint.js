@@ -60,8 +60,6 @@ function verifyStats(bigintStats, numStats) {
         numStats.isSymbolicLink()
       );
     } else if (key.endsWith('Ms')) {
-      console.log(bigintStats);
-      console.log(numStats);
       const nsKey = key.replace('Ms', 'Ns');
       const msFromBigInt = bigintStats[key];
       const nsFromBigInt = bigintStats[nsKey];
