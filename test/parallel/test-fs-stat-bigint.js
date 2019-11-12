@@ -75,9 +75,9 @@ function verifyStats(bigintStats, numStats) {
         `BigInt version ${key} = ${msFromBigInt}n`);
       // The difference between the millisecond-precision value and the
       // nanosecond-precision value scaled down to milliseconds should be
-      // smaller than 2
+      // smaller than 5
       assert(
-        Math.abs(msFromNum - Number(msFromBigIntNs)) < 2,
+        Math.abs(msFromNum - Number(msFromBigIntNs)) < 5,
         `Number version ${key} = ${msFromNum}, ` +
         `BigInt version ${nsKey} = ${nsFromBigInt}n` +
         ` = ${msFromBigIntNs}ms`);
