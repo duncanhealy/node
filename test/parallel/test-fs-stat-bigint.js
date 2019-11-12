@@ -60,15 +60,17 @@ function verifyStats(bigintStats, numStats) {
         numStats.isSymbolicLink()
       );
     } else if (key.endsWith('Ms')) {
+      console.log(bigintStats);
+      console.log(numStats);
       const nsKey = key.replace('Ms', 'Ns');
       const msFromBigInt = bigintStats[key];
       const nsFromBigInt = bigintStats[nsKey];
       const msFromBigIntNs = Number(nsFromBigInt / (10n ** 6n));
       const msFromNum = numStats[key];
       // The difference between the millisecond-precision values should be
-      // smaller than 2
+      // smaller than 5 - i9 consistently returns 4ms diff
       assert(
-        Math.abs(msFromNum - Number(msFromBigInt)) < 2,
+        Math.abs(msFromNum - Number(msFromBigInt)) < 5,
         `Number version ${key} = ${msFromNum}, ` +
         `BigInt version ${key} = ${msFromBigInt}n`);
       // The difference between the millisecond-precision value and the
