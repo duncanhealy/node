@@ -26,8 +26,8 @@ function verifyStats(bigintStats, numStats) {
       const time = val.getTime();
       const time2 = bigintStats[key].getTime();
       assert(
-        Math.abs(time - time2) < 2,
-        `difference of ${key}.getTime() should < 2.\n` +
+        Math.abs(time - time2) < 5,
+        `difference of ${key}.getTime() should < 5.\n` +
         `Number version ${time}, BigInt version ${time2}n`);
     } else if (key === 'mode') {
       assert.strictEqual(bigintStats[key], BigInt(val));
