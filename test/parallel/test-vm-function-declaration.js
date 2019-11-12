@@ -37,10 +37,9 @@ code += 'var c = function() {};\n';
 code += '(function(){return this})().b;\n';
 
 const res = vm.runInContext(code, o, 'test');
-console.log(res);
 assert.strictEqual(typeof res, 'function');
 assert.strictEqual(res.name, 'b');
-// assert.strictEqual(typeof o.a, 'function');
+assert.strictEqual(typeof o.a, 'function');
 assert.strictEqual(typeof o.b, 'function');
 assert.strictEqual(typeof o.c, 'function');
 
