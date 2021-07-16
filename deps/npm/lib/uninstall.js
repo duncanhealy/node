@@ -2,20 +2,28 @@ const { resolve } = require('path')
 const Arborist = require('@npmcli/arborist')
 const rpj = require('read-package-json-fast')
 
-const usageUtil = require('./utils/usage.js')
 const reifyFinish = require('./utils/reify-finish.js')
 const completion = require('./utils/completion/installed-shallow.js')
 
-class Uninstall {
-  constructor (npm) {
-    this.npm = npm
+const ArboristWorkspaceCmd = require('./workspaces/arborist-cmd.js')
+class Uninstall extends ArboristWorkspaceCmd {
+  static get description () {
+    return 'Remove a package'
   }
 
-  get usage () {
-    return usageUtil(
-      'uninstall',
-      'npm uninstall [<@scope>/]<pkg>[@<version>]... [-S|--save|--no-save]'
-    )
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get name () {
+    return 'uninstall'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return ['save', ...super.params]
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['[<@scope>/]<pkg>...']
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
@@ -29,8 +37,10 @@ class Uninstall {
 
   async uninstall (args) {
     // the /path/to/node_modules/..
-    const { global, prefix } = this.npm.flatOptions
-    const path = global ? resolve(this.npm.globalDir, '..') : prefix
+    const global = this.npm.config.get('global')
+    const path = global
+      ? resolve(this.npm.globalDir, '..')
+      : this.npm.localPrefix
 
     if (!args.length) {
       if (!global)
@@ -51,12 +61,15 @@ class Uninstall {
       }
     }
 
-    const arb = new Arborist({ ...this.npm.flatOptions, path })
-
-    await arb.reify({
+    const opts = {
       ...this.npm.flatOptions,
+      path,
+      log: this.npm.log,
       rm: args,
-    })
+      workspaces: this.workspaceNames,
+    }
+    const arb = new Arborist(opts)
+    await arb.reify(opts)
     await reifyFinish(this.npm, arb)
   }
 }

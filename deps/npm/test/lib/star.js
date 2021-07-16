@@ -1,31 +1,36 @@
-const requireInject = require('require-inject')
 const t = require('tap')
+const { fake: mockNpm } = require('../fixtures/mock-npm')
 
 let result = ''
 
 const noop = () => null
-const npm = { config: { get () {} }, flatOptions: { unicode: false } }
+const config = {
+  unicode: false,
+  'star.unstar': false,
+}
+const npm = mockNpm({
+  config,
+  output: (...msg) => {
+    result += msg.join('\n')
+  },
+})
 const npmFetch = { json: noop }
 const npmlog = { error: noop, info: noop, verbose: noop }
 const mocks = {
   npmlog,
   'npm-registry-fetch': npmFetch,
-  '../../lib/utils/output.js': (...msg) => {
-    result += msg.join('\n')
-  },
   '../../lib/utils/get-identity.js': async () => 'foo',
   '../../lib/utils/usage.js': () => 'usage instructions',
 }
 
-const Star = requireInject('../../lib/star.js', mocks)
+const Star = t.mock('../../lib/star.js', mocks)
 const star = new Star(npm)
 
-t.afterEach(cb => {
-  npm.config = { get () {} }
-  npm.flatOptions.unicode = false
+t.afterEach(() => {
+  config.unicode = false
+  config['star.unstar'] = false
   npmlog.info = noop
   result = ''
-  cb()
 })
 
 t.test('no args', t => {
@@ -70,7 +75,7 @@ t.test('star a package', t => {
 t.test('unstar a package', t => {
   t.plan(4)
   const pkgName = '@npmcli/arborist'
-  npm.config.get = key => key === 'star.unstar'
+  config['star.unstar'] = true
   npmFetch.json = async (uri, opts) => ({
     _id: pkgName,
     _rev: 'hash',
@@ -97,7 +102,7 @@ t.test('unstar a package', t => {
 
 t.test('unicode', async t => {
   t.test('star a package', t => {
-    npm.flatOptions.unicode = true
+    config.unicode = true
     npmFetch.json = async (uri, opts) => ({})
     star.exec(['pkg'], err => {
       if (err)
@@ -112,8 +117,8 @@ t.test('unicode', async t => {
   })
 
   t.test('unstar a package', t => {
-    npm.flatOptions.unicode = true
-    npm.config.get = key => key === 'star.unstar'
+    config.unicode = true
+    config['star.unstar'] = true
     npmFetch.json = async (uri, opts) => ({})
     star.exec(['pkg'], err => {
       if (err)
@@ -129,7 +134,7 @@ t.test('unicode', async t => {
 })
 
 t.test('logged out user', t => {
-  const Star = requireInject('../../lib/star.js', {
+  const Star = t.mock('../../lib/star.js', {
     ...mocks,
     '../../lib/utils/get-identity.js': async () => undefined,
   })

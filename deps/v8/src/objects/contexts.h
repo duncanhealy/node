@@ -198,6 +198,11 @@ enum ContextLookupFlags {
   V(NUMBER_FUNCTION_INDEX, JSFunction, number_function)                        \
   V(OBJECT_FUNCTION_INDEX, JSFunction, object_function)                        \
   V(OBJECT_FUNCTION_PROTOTYPE_MAP_INDEX, Map, object_function_prototype_map)   \
+  V(PROMISE_HOOK_INIT_FUNCTION_INDEX, Object, promise_hook_init_function)      \
+  V(PROMISE_HOOK_BEFORE_FUNCTION_INDEX, Object, promise_hook_before_function)  \
+  V(PROMISE_HOOK_AFTER_FUNCTION_INDEX, Object, promise_hook_after_function)    \
+  V(PROMISE_HOOK_RESOLVE_FUNCTION_INDEX, Object,                               \
+    promise_hook_resolve_function)                                             \
   V(PROXY_CALLABLE_MAP_INDEX, Map, proxy_callable_map)                         \
   V(PROXY_CONSTRUCTOR_MAP_INDEX, Map, proxy_constructor_map)                   \
   V(PROXY_FUNCTION_INDEX, JSFunction, proxy_function)                          \
@@ -214,6 +219,7 @@ enum ContextLookupFlags {
   V(REGEXP_PROTOTYPE_MAP_INDEX, Map, regexp_prototype_map)                     \
   V(REGEXP_REPLACE_FUNCTION_INDEX, JSFunction, regexp_replace_function)        \
   V(REGEXP_RESULT_MAP_INDEX, Map, regexp_result_map)                           \
+  V(REGEXP_RESULT_WITH_INDICES_MAP_INDEX, Map, regexp_result_with_indices_map) \
   V(REGEXP_RESULT_INDICES_MAP_INDEX, Map, regexp_result_indices_map)           \
   V(REGEXP_SEARCH_FUNCTION_INDEX, JSFunction, regexp_search_function)          \
   V(REGEXP_SPLIT_FUNCTION_INDEX, JSFunction, regexp_split_function)            \
@@ -236,6 +242,7 @@ enum ContextLookupFlags {
   V(SLOW_TEMPLATE_INSTANTIATIONS_CACHE_INDEX, SimpleNumberDictionary,          \
     slow_template_instantiations_cache)                                        \
   V(ATOMICS_WAITASYNC_PROMISES, OrderedHashSet, atomics_waitasync_promises)    \
+  V(WASM_DEBUG_MAPS, FixedArray, wasm_debug_maps)                              \
   /* Fast Path Protectors */                                                   \
   V(REGEXP_SPECIES_PROTECTOR_INDEX, PropertyCell, regexp_species_protector)    \
   /* All *_FUNCTION_MAP_INDEX definitions used by Context::FunctionMapIndex */ \
@@ -253,29 +260,14 @@ enum ContextLookupFlags {
   V(STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX, Map,                          \
     strict_function_without_prototype_map)                                     \
   V(METHOD_WITH_NAME_MAP_INDEX, Map, method_with_name_map)                     \
-  V(METHOD_WITH_HOME_OBJECT_MAP_INDEX, Map, method_with_home_object_map)       \
-  V(METHOD_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX, Map,                           \
-    method_with_name_and_home_object_map)                                      \
   V(ASYNC_FUNCTION_MAP_INDEX, Map, async_function_map)                         \
   V(ASYNC_FUNCTION_WITH_NAME_MAP_INDEX, Map, async_function_with_name_map)     \
-  V(ASYNC_FUNCTION_WITH_HOME_OBJECT_MAP_INDEX, Map,                            \
-    async_function_with_home_object_map)                                       \
-  V(ASYNC_FUNCTION_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX, Map,                   \
-    async_function_with_name_and_home_object_map)                              \
   V(GENERATOR_FUNCTION_MAP_INDEX, Map, generator_function_map)                 \
   V(GENERATOR_FUNCTION_WITH_NAME_MAP_INDEX, Map,                               \
     generator_function_with_name_map)                                          \
-  V(GENERATOR_FUNCTION_WITH_HOME_OBJECT_MAP_INDEX, Map,                        \
-    generator_function_with_home_object_map)                                   \
-  V(GENERATOR_FUNCTION_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX, Map,               \
-    generator_function_with_name_and_home_object_map)                          \
   V(ASYNC_GENERATOR_FUNCTION_MAP_INDEX, Map, async_generator_function_map)     \
   V(ASYNC_GENERATOR_FUNCTION_WITH_NAME_MAP_INDEX, Map,                         \
     async_generator_function_with_name_map)                                    \
-  V(ASYNC_GENERATOR_FUNCTION_WITH_HOME_OBJECT_MAP_INDEX, Map,                  \
-    async_generator_function_with_home_object_map)                             \
-  V(ASYNC_GENERATOR_FUNCTION_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX, Map,         \
-    async_generator_function_with_name_and_home_object_map)                    \
   V(CLASS_FUNCTION_MAP_INDEX, Map, class_function_map)                         \
   V(STRING_FUNCTION_INDEX, JSFunction, string_function)                        \
   V(STRING_FUNCTION_PROTOTYPE_MAP_INDEX, Map, string_function_prototype_map)   \
@@ -400,7 +392,7 @@ class ScriptContextTable : public FixedArray {
 // [ previous       ]  A pointer to the previous context.
 //
 // [ extension      ]  Additional data. This slot is only available when
-//                     extension_bit is set. Check using has_extension.
+//                     ScopeInfo::HasContextExtensionSlot returns true.
 //
 //                     For native contexts, it contains the global object.
 //                     For module contexts, it contains the module object.
@@ -435,13 +427,14 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
 
   // Setter and getter for elements.
   V8_INLINE Object get(int index) const;
-  V8_INLINE Object get(IsolateRoot isolate, int index) const;
+  V8_INLINE Object get(PtrComprCageBase cage_base, int index) const;
   V8_INLINE void set(int index, Object value);
   // Setter with explicit barrier mode.
   V8_INLINE void set(int index, Object value, WriteBarrierMode mode);
   // Setter and getter with synchronization semantics.
   V8_INLINE Object synchronized_get(int index) const;
-  V8_INLINE Object synchronized_get(IsolateRoot isolate, int index) const;
+  V8_INLINE Object synchronized_get(PtrComprCageBase cage_base,
+                                    int index) const;
   V8_INLINE void synchronized_set(int index, Object value);
 
   static const int kScopeInfoOffset = kElementsOffset;
@@ -486,7 +479,7 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
     SCOPE_INFO_INDEX,
     PREVIOUS_INDEX,
 
-    // This slot only exists if the extension_flag bit is set.
+    // This slot only exists if ScopeInfo::HasContextExtensionSlot returns true.
     EXTENSION_INDEX,
 
 // These slots are only in native contexts.
@@ -530,17 +523,20 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
   static const int kInvalidContext = 1;
 
   // Direct slot access.
-  inline void set_scope_info(ScopeInfo scope_info);
+  inline void set_scope_info(ScopeInfo scope_info,
+                             WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline Object unchecked_previous();
   inline Context previous();
-  inline void set_previous(Context context);
+  inline void set_previous(Context context,
+                           WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
 
   inline Object next_context_link();
 
   inline bool has_extension();
   inline HeapObject extension();
-  inline void set_extension(HeapObject object);
+  inline void set_extension(HeapObject object,
+                            WriteBarrierMode mode = UPDATE_WRITE_BARRIER);
   JSObject extension_object();
   JSReceiver extension_receiver();
   V8_EXPORT_PRIVATE ScopeInfo scope_info();
@@ -624,8 +620,7 @@ class Context : public TorqueGeneratedContext<Context, HeapObject> {
                                bool* is_sloppy_function_name = nullptr);
 
   static inline int FunctionMapIndex(LanguageMode language_mode,
-                                     FunctionKind kind, bool has_shared_name,
-                                     bool needs_home_object);
+                                     FunctionKind kind, bool has_shared_name);
 
   static int ArrayMapIndex(ElementsKind elements_kind) {
     DCHECK(IsFastElementsKind(elements_kind));
@@ -705,6 +700,9 @@ class NativeContext : public Context {
   void ResetErrorsThrown();
   void IncrementErrorsThrown();
   int GetErrorsThrown();
+
+  void RunPromiseHook(PromiseHookType type, Handle<JSPromise> promise,
+                      Handle<Object> parent);
 
  private:
   STATIC_ASSERT(OffsetOfElementAt(EMBEDDER_DATA_INDEX) ==

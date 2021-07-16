@@ -23,7 +23,6 @@
 #include "src/heap/incremental-marking-inl.h"
 #include "src/heap/index-generator.h"
 #include "src/heap/invalidated-slots-inl.h"
-#include "src/heap/item-parallel-job.h"
 #include "src/heap/large-spaces.h"
 #include "src/heap/local-allocator-inl.h"
 #include "src/heap/mark-compact-inl.h"
@@ -46,6 +45,7 @@
 #include "src/objects/embedder-data-array-inl.h"
 #include "src/objects/foreign.h"
 #include "src/objects/hash-table-inl.h"
+#include "src/objects/js-array-buffer-inl.h"
 #include "src/objects/js-objects-inl.h"
 #include "src/objects/maybe-object.h"
 #include "src/objects/slots-inl.h"
@@ -494,12 +494,13 @@ void MarkCompactCollector::StartMarking() {
       contexts.push_back(context->ptr());
     }
   }
+  bytecode_flush_mode_ = Heap::GetBytecodeFlushMode(isolate());
   marking_worklists()->CreateContextWorklists(contexts);
   local_marking_worklists_ =
       std::make_unique<MarkingWorklists::Local>(marking_worklists());
   marking_visitor_ = std::make_unique<MarkingVisitor>(
       marking_state(), local_marking_worklists(), weak_objects(), heap_,
-      epoch(), Heap::GetBytecodeFlushMode(),
+      epoch(), bytecode_flush_mode(),
       heap_->local_embedder_heap_tracer()->InUse(),
       heap_->is_current_gc_forced());
 // Marking bits are cleared by the sweeper.
@@ -857,11 +858,9 @@ void MarkCompactCollector::Prepare() {
     space->PrepareForMarkCompact();
   }
 
-  if (FLAG_local_heaps) {
-    // Fill and reset all background thread LABs
-    heap_->safepoint()->IterateLocalHeaps(
-        [](LocalHeap* local_heap) { local_heap->FreeLinearAllocationArea(); });
-  }
+  // Fill and reset all background thread LABs
+  heap_->safepoint()->IterateLocalHeaps(
+      [](LocalHeap* local_heap) { local_heap->FreeLinearAllocationArea(); });
 
   // All objects are guaranteed to be initialized in atomic pause
   heap()->new_lo_space()->ResetPendingObject();
@@ -1873,12 +1872,10 @@ void MarkCompactCollector::ProcessEphemeronMarking() {
 void MarkCompactCollector::ProcessTopOptimizedFrame(ObjectVisitor* visitor) {
   for (StackFrameIterator it(isolate(), isolate()->thread_local_top());
        !it.done(); it.Advance()) {
-    if (it.frame()->type() == StackFrame::INTERPRETED) {
-      return;
-    }
+    if (it.frame()->is_unoptimized()) return;
     if (it.frame()->type() == StackFrame::OPTIMIZED) {
       Code code = it.frame()->LookupCode();
-      if (!code.CanDeoptAt(it.frame()->pc())) {
+      if (!code.CanDeoptAt(isolate(), it.frame()->pc())) {
         Code::BodyDescriptor::IterateBody(code.map(), code, visitor);
       }
       return;
@@ -2022,6 +2019,9 @@ void MarkCompactCollector::MarkLiveObjects() {
       DCHECK(local_marking_worklists()->IsEmpty());
     }
 
+    // We depend on IterateWeakRootsForPhantomHandles being called before
+    // ClearOldBytecodeCandidates in order to identify flushed bytecode in the
+    // CPU profiler.
     {
       heap()->isolate()->global_handles()->IterateWeakRootsForPhantomHandles(
           &IsUnmarkedHeapObject);
@@ -2085,6 +2085,8 @@ void MarkCompactCollector::ClearNonLiveReferences() {
     ClearJSWeakRefs();
   }
 
+  PROFILE(heap()->isolate(), WeakCodeClearEvent());
+
   MarkDependentCodeForDeoptimization();
 
   DCHECK(weak_objects_.transition_arrays.IsEmpty());
@@ -2116,7 +2118,7 @@ void MarkCompactCollector::MarkDependentCodeForDeoptimization() {
 
 void MarkCompactCollector::ClearPotentialSimpleMapTransition(Map dead_target) {
   DCHECK(non_atomic_marking_state()->IsWhite(dead_target));
-  Object potential_parent = dead_target.constructor_or_backpointer();
+  Object potential_parent = dead_target.constructor_or_back_pointer();
   if (potential_parent.IsMap()) {
     Map parent = Map::cast(potential_parent);
     DisallowGarbageCollection no_gc_obviously;
@@ -2135,8 +2137,8 @@ void MarkCompactCollector::ClearPotentialSimpleMapTransition(Map map,
   DCHECK_EQ(map.raw_transitions(), HeapObjectReference::Weak(dead_target));
   // Take ownership of the descriptor array.
   int number_of_own_descriptors = map.NumberOfOwnDescriptors();
-  DescriptorArray descriptors = map.instance_descriptors(kRelaxedLoad);
-  if (descriptors == dead_target.instance_descriptors(kRelaxedLoad) &&
+  DescriptorArray descriptors = map.instance_descriptors(isolate());
+  if (descriptors == dead_target.instance_descriptors(isolate()) &&
       number_of_own_descriptors > 0) {
     TrimDescriptorArray(map, descriptors);
     DCHECK(descriptors.number_of_descriptors() == number_of_own_descriptors);
@@ -2254,18 +2256,18 @@ void MarkCompactCollector::ClearFullMapTransitions() {
       // filled. Allow it.
       if (array.GetTargetIfExists(0, isolate(), &map)) {
         DCHECK(!map.is_null());  // Weak pointers aren't cleared yet.
-        Object constructor_or_backpointer = map.constructor_or_backpointer();
-        if (constructor_or_backpointer.IsSmi()) {
+        Object constructor_or_back_pointer = map.constructor_or_back_pointer();
+        if (constructor_or_back_pointer.IsSmi()) {
           DCHECK(isolate()->has_active_deserializer());
-          DCHECK_EQ(constructor_or_backpointer,
+          DCHECK_EQ(constructor_or_back_pointer,
                     Deserializer::uninitialized_field_value());
           continue;
         }
-        Map parent = Map::cast(map.constructor_or_backpointer());
+        Map parent = Map::cast(map.constructor_or_back_pointer());
         bool parent_is_alive =
             non_atomic_marking_state()->IsBlackOrGrey(parent);
         DescriptorArray descriptors =
-            parent_is_alive ? parent.instance_descriptors(kRelaxedLoad)
+            parent_is_alive ? parent.instance_descriptors(isolate())
                             : DescriptorArray();
         bool descriptors_owner_died =
             CompactTransitionArray(parent, array, descriptors);
@@ -2323,10 +2325,10 @@ bool MarkCompactCollector::CompactTransitionArray(Map map,
   // Compact all live transitions to the left.
   for (int i = 0; i < num_transitions; ++i) {
     Map target = transitions.GetTarget(i);
-    DCHECK_EQ(target.constructor_or_backpointer(), map);
+    DCHECK_EQ(target.constructor_or_back_pointer(), map);
     if (non_atomic_marking_state()->IsWhite(target)) {
       if (!descriptors.is_null() &&
-          target.instance_descriptors(kRelaxedLoad) == descriptors) {
+          target.instance_descriptors(isolate()) == descriptors) {
         DCHECK(!target.is_prototype_map());
         descriptors_owner_died = true;
       }
@@ -2398,13 +2400,6 @@ void MarkCompactCollector::TrimDescriptorArray(Map map,
 
     TrimEnumCache(map, descriptors);
     descriptors.Sort();
-
-    if (FLAG_unbox_double_fields) {
-      LayoutDescriptor layout_descriptor = map.layout_descriptor(kAcquireLoad);
-      layout_descriptor = layout_descriptor.Trim(heap_, map, descriptors,
-                                                 number_of_own_descriptors);
-      SLOW_DCHECK(layout_descriptor.IsConsistentWithMap(map, true));
-    }
   }
   DCHECK(descriptors.number_of_descriptors() == number_of_own_descriptors);
   map.set_owns_descriptors(true);
@@ -2488,9 +2483,6 @@ void MarkCompactCollector::ClearWeakReferences() {
 }
 
 void MarkCompactCollector::ClearJSWeakRefs() {
-  if (!FLAG_harmony_weak_refs) {
-    return;
-  }
   JSWeakRef weak_ref;
   while (weak_objects_.js_weak_refs.Pop(kMainThreadTask, &weak_ref)) {
     HeapObject target = HeapObject::cast(weak_ref.target());
@@ -2708,8 +2700,9 @@ static inline SlotCallbackResult UpdateSlot(TSlot slot,
 }
 
 template <AccessMode access_mode, typename TSlot>
-static inline SlotCallbackResult UpdateSlot(IsolateRoot isolate, TSlot slot) {
-  typename TSlot::TObject obj = slot.Relaxed_Load(isolate);
+static inline SlotCallbackResult UpdateSlot(PtrComprCageBase cage_base,
+                                            TSlot slot) {
+  typename TSlot::TObject obj = slot.Relaxed_Load(cage_base);
   HeapObject heap_obj;
   if (TSlot::kCanBeWeak && obj->GetHeapObjectIfWeak(&heap_obj)) {
     UpdateSlot<access_mode, HeapObjectReferenceType::WEAK>(slot, obj, heap_obj);
@@ -2721,9 +2714,9 @@ static inline SlotCallbackResult UpdateSlot(IsolateRoot isolate, TSlot slot) {
 }
 
 template <AccessMode access_mode, typename TSlot>
-static inline SlotCallbackResult UpdateStrongSlot(IsolateRoot isolate,
+static inline SlotCallbackResult UpdateStrongSlot(PtrComprCageBase cage_base,
                                                   TSlot slot) {
-  typename TSlot::TObject obj = slot.Relaxed_Load(isolate);
+  typename TSlot::TObject obj = slot.Relaxed_Load(cage_base);
   DCHECK(!HAS_WEAK_HEAP_OBJECT_TAG(obj.ptr()));
   HeapObject heap_obj;
   if (obj.GetHeapObject(&heap_obj)) {
@@ -2739,39 +2732,40 @@ static inline SlotCallbackResult UpdateStrongSlot(IsolateRoot isolate,
 // It does not expect to encounter pointers to dead objects.
 class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
  public:
-  explicit PointersUpdatingVisitor(IsolateRoot isolate) : isolate_(isolate) {}
+  explicit PointersUpdatingVisitor(PtrComprCageBase cage_base)
+      : cage_base_(cage_base) {}
 
   void VisitPointer(HeapObject host, ObjectSlot p) override {
-    UpdateStrongSlotInternal(isolate_, p);
+    UpdateStrongSlotInternal(cage_base_, p);
   }
 
   void VisitPointer(HeapObject host, MaybeObjectSlot p) override {
-    UpdateSlotInternal(isolate_, p);
+    UpdateSlotInternal(cage_base_, p);
   }
 
   void VisitPointers(HeapObject host, ObjectSlot start,
                      ObjectSlot end) override {
     for (ObjectSlot p = start; p < end; ++p) {
-      UpdateStrongSlotInternal(isolate_, p);
+      UpdateStrongSlotInternal(cage_base_, p);
     }
   }
 
   void VisitPointers(HeapObject host, MaybeObjectSlot start,
                      MaybeObjectSlot end) final {
     for (MaybeObjectSlot p = start; p < end; ++p) {
-      UpdateSlotInternal(isolate_, p);
+      UpdateSlotInternal(cage_base_, p);
     }
   }
 
   void VisitRootPointer(Root root, const char* description,
                         FullObjectSlot p) override {
-    UpdateRootSlotInternal(isolate_, p);
+    UpdateRootSlotInternal(cage_base_, p);
   }
 
   void VisitRootPointers(Root root, const char* description,
                          FullObjectSlot start, FullObjectSlot end) override {
     for (FullObjectSlot p = start; p < end; ++p) {
-      UpdateRootSlotInternal(isolate_, p);
+      UpdateRootSlotInternal(cage_base_, p);
     }
   }
 
@@ -2779,7 +2773,7 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
                          OffHeapObjectSlot start,
                          OffHeapObjectSlot end) override {
     for (OffHeapObjectSlot p = start; p < end; ++p) {
-      UpdateRootSlotInternal(isolate_, p);
+      UpdateRootSlotInternal(cage_base_, p);
     }
   }
 
@@ -2794,32 +2788,32 @@ class PointersUpdatingVisitor : public ObjectVisitor, public RootVisitor {
   }
 
  private:
-  static inline SlotCallbackResult UpdateRootSlotInternal(IsolateRoot isolate,
-                                                          FullObjectSlot slot) {
-    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(isolate, slot);
+  static inline SlotCallbackResult UpdateRootSlotInternal(
+      PtrComprCageBase cage_base, FullObjectSlot slot) {
+    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
   }
 
   static inline SlotCallbackResult UpdateRootSlotInternal(
-      IsolateRoot isolate, OffHeapObjectSlot slot) {
-    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(isolate, slot);
+      PtrComprCageBase cage_base, OffHeapObjectSlot slot) {
+    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
   }
 
   static inline SlotCallbackResult UpdateStrongMaybeObjectSlotInternal(
-      IsolateRoot isolate, MaybeObjectSlot slot) {
-    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(isolate, slot);
+      PtrComprCageBase cage_base, MaybeObjectSlot slot) {
+    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
   }
 
-  static inline SlotCallbackResult UpdateStrongSlotInternal(IsolateRoot isolate,
-                                                            ObjectSlot slot) {
-    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(isolate, slot);
+  static inline SlotCallbackResult UpdateStrongSlotInternal(
+      PtrComprCageBase cage_base, ObjectSlot slot) {
+    return UpdateStrongSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
   }
 
-  static inline SlotCallbackResult UpdateSlotInternal(IsolateRoot isolate,
-                                                      MaybeObjectSlot slot) {
-    return UpdateSlot<AccessMode::NON_ATOMIC>(isolate, slot);
+  static inline SlotCallbackResult UpdateSlotInternal(
+      PtrComprCageBase cage_base, MaybeObjectSlot slot) {
+    return UpdateSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
   }
 
-  IsolateRoot isolate_;
+  PtrComprCageBase cage_base_;
 };
 
 static String UpdateReferenceInExternalStringTableEntry(Heap* heap,
@@ -3116,9 +3110,13 @@ void FullEvacuator::RawEvacuatePage(MemoryChunk* chunk, intptr_t* live_bytes) {
           chunk, marking_state, &old_space_visitor_,
           LiveObjectVisitor::kClearMarkbits, &failed_object);
       if (!success) {
-        // Aborted compaction page. Actual processing happens on the main
-        // thread for simplicity reasons.
-        collector_->ReportAbortedEvacuationCandidate(failed_object, chunk);
+        if (FLAG_crash_on_aborted_evacuation) {
+          heap_->FatalProcessOutOfMemory("FullEvacuator::RawEvacuatePage");
+        } else {
+          // Aborted compaction page. Actual processing happens on the main
+          // thread for simplicity reasons.
+          collector_->ReportAbortedEvacuationCandidate(failed_object, chunk);
+        }
       }
       break;
     }
@@ -3502,12 +3500,10 @@ class PointersUpdatingJob : public v8::JobTask {
   explicit PointersUpdatingJob(
       Isolate* isolate,
       std::vector<std::unique_ptr<UpdatingItem>> updating_items,
-      base::Optional<size_t> slots, GCTracer::Scope::ScopeId scope,
-      GCTracer::Scope::ScopeId background_scope)
+      GCTracer::Scope::ScopeId scope, GCTracer::Scope::ScopeId background_scope)
       : updating_items_(std::move(updating_items)),
         remaining_updating_items_(updating_items_.size()),
         generator_(updating_items_.size()),
-        slots_(slots),
         tracer_(isolate->heap()->tracer()),
         scope_(scope),
         background_scope_(background_scope) {}
@@ -3542,17 +3538,7 @@ class PointersUpdatingJob : public v8::JobTask {
     size_t items = remaining_updating_items_.load(std::memory_order_relaxed);
     if (!FLAG_parallel_pointer_update) return items > 0;
     const size_t kMaxPointerUpdateTasks = 8;
-    const size_t kSlotsPerTask = 600;
-    size_t wanted_tasks = items;
-    // Limit the number of update tasks as task creation often dominates the
-    // actual work that is being done.
-    if (slots_ && *slots_ > 0) {
-      // Round up to ensure enough workers for all items.
-      wanted_tasks = std::min<size_t>(
-          items, (*slots_ + kSlotsPerTask - 1) / kSlotsPerTask);
-    }
-    size_t max_concurrency =
-        std::min<size_t>(kMaxPointerUpdateTasks, wanted_tasks);
+    size_t max_concurrency = std::min<size_t>(kMaxPointerUpdateTasks, items);
     DCHECK_IMPLIES(items > 0, max_concurrency > 0);
     return max_concurrency;
   }
@@ -3561,7 +3547,6 @@ class PointersUpdatingJob : public v8::JobTask {
   std::vector<std::unique_ptr<UpdatingItem>> updating_items_;
   std::atomic<size_t> remaining_updating_items_{0};
   IndexGenerator generator_;
-  const base::Optional<size_t> slots_;
 
   GCTracer* tracer_;
   GCTracer::Scope::ScopeId scope_;
@@ -3594,7 +3579,7 @@ class ToSpaceUpdatingItem : public UpdatingItem {
     TRACE_EVENT0(TRACE_DISABLED_BY_DEFAULT("v8.gc"),
                  "ToSpaceUpdatingItem::ProcessVisitAll");
     PointersUpdatingVisitor visitor(
-        GetIsolateForPtrComprFromOnHeapAddress(start_));
+        GetPtrComprCageBaseFromOnHeapAddress(start_));
     for (Address cur = start_; cur < end_;) {
       HeapObject object = HeapObject::FromAddress(cur);
       Map map = object.map();
@@ -3610,7 +3595,7 @@ class ToSpaceUpdatingItem : public UpdatingItem {
     // For young generation evacuations we want to visit grey objects, for
     // full MC, we need to visit black objects.
     PointersUpdatingVisitor visitor(
-        GetIsolateForPtrComprFromOnHeapAddress(start_));
+        GetPtrComprCageBaseFromOnHeapAddress(start_));
     for (auto object_and_size : LiveObjectRange<kAllLiveObjects>(
              chunk_, marking_state_->bitmap(chunk_))) {
       object_and_size.first.IterateBodyFast(&visitor);
@@ -3756,12 +3741,12 @@ class RememberedSetUpdatingItem : public UpdatingItem {
     if ((updating_mode_ == RememberedSetUpdatingMode::ALL) &&
         (chunk_->slot_set<OLD_TO_OLD, AccessMode::NON_ATOMIC>() != nullptr)) {
       InvalidatedSlotsFilter filter = InvalidatedSlotsFilter::OldToOld(chunk_);
-      IsolateRoot isolate = heap_->isolate();
+      PtrComprCageBase cage_base = heap_->isolate();
       RememberedSet<OLD_TO_OLD>::Iterate(
           chunk_,
-          [&filter, isolate](MaybeObjectSlot slot) {
+          [&filter, cage_base](MaybeObjectSlot slot) {
             if (!filter.IsValid(slot.address())) return REMOVE_SLOT;
-            return UpdateSlot<AccessMode::NON_ATOMIC>(isolate, slot);
+            return UpdateSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
           },
           SlotSet::FREE_EMPTY_BUCKETS);
       chunk_->ReleaseSlotSet<OLD_TO_OLD>();
@@ -3796,10 +3781,10 @@ class RememberedSetUpdatingItem : public UpdatingItem {
                                                           Address slot) {
         // Using UpdateStrongSlot is OK here, because there are no weak
         // typed slots.
-        IsolateRoot isolate = heap_->isolate();
+        PtrComprCageBase cage_base = heap_->isolate();
         return UpdateTypedSlotHelper::UpdateTypedSlot(
-            heap_, slot_type, slot, [isolate](FullMaybeObjectSlot slot) {
-              return UpdateStrongSlot<AccessMode::NON_ATOMIC>(isolate, slot);
+            heap_, slot_type, slot, [cage_base](FullMaybeObjectSlot slot) {
+              return UpdateStrongSlot<AccessMode::NON_ATOMIC>(cage_base, slot);
             });
       });
     }
@@ -3951,6 +3936,8 @@ void MarkCompactCollector::UpdatePointersAfterEvacuation() {
                                       RememberedSetUpdatingMode::ALL);
     CollectRememberedSetUpdatingItems(&updating_items, heap()->code_lo_space(),
                                       RememberedSetUpdatingMode::ALL);
+    CollectRememberedSetUpdatingItems(&updating_items, heap()->map_space(),
+                                      RememberedSetUpdatingMode::ALL);
 
     CollectToSpaceUpdatingItems(&updating_items);
     updating_items.push_back(
@@ -3959,33 +3946,10 @@ void MarkCompactCollector::UpdatePointersAfterEvacuation() {
     V8::GetCurrentPlatform()
         ->PostJob(v8::TaskPriority::kUserBlocking,
                   std::make_unique<PointersUpdatingJob>(
-                      isolate(), std::move(updating_items), old_to_new_slots_,
+                      isolate(), std::move(updating_items),
                       GCTracer::Scope::MC_EVACUATE_UPDATE_POINTERS_PARALLEL,
                       GCTracer::Scope::MC_BACKGROUND_EVACUATE_UPDATE_POINTERS))
         ->Join();
-  }
-
-  {
-    // - Update pointers in map space in a separate phase to avoid data races
-    //   with Map->LayoutDescriptor edge.
-    // - Update array buffer trackers in the second phase to have access to
-    //   byte length which is potentially a HeapNumber.
-    TRACE_GC(heap()->tracer(),
-             GCTracer::Scope::MC_EVACUATE_UPDATE_POINTERS_SLOTS_MAP_SPACE);
-    std::vector<std::unique_ptr<UpdatingItem>> updating_items;
-
-    CollectRememberedSetUpdatingItems(&updating_items, heap()->map_space(),
-                                      RememberedSetUpdatingMode::ALL);
-    if (!updating_items.empty()) {
-      V8::GetCurrentPlatform()
-          ->PostJob(
-              v8::TaskPriority::kUserBlocking,
-              std::make_unique<PointersUpdatingJob>(
-                  isolate(), std::move(updating_items), old_to_new_slots_,
-                  GCTracer::Scope::MC_EVACUATE_UPDATE_POINTERS_PARALLEL,
-                  GCTracer::Scope::MC_BACKGROUND_EVACUATE_UPDATE_POINTERS))
-          ->Join();
-    }
   }
 
   {
@@ -4009,6 +3973,9 @@ void MarkCompactCollector::ReportAbortedEvacuationCandidate(
 }
 
 void MarkCompactCollector::PostProcessEvacuationCandidates() {
+  CHECK_IMPLIES(FLAG_crash_on_aborted_evacuation,
+                aborted_evacuation_candidates_.empty());
+
   for (auto object_and_page : aborted_evacuation_candidates_) {
     HeapObject failed_object = object_and_page.first;
     Page* page = object_and_page.second;
@@ -4480,7 +4447,7 @@ void MinorMarkCompactCollector::UpdatePointersAfterEvacuation() {
         ->PostJob(
             v8::TaskPriority::kUserBlocking,
             std::make_unique<PointersUpdatingJob>(
-                isolate(), std::move(updating_items), old_to_new_slots_,
+                isolate(), std::move(updating_items),
                 GCTracer::Scope::MINOR_MC_EVACUATE_UPDATE_POINTERS_PARALLEL,
                 GCTracer::Scope::MINOR_MC_BACKGROUND_EVACUATE_UPDATE_POINTERS))
         ->Join();
@@ -4763,10 +4730,6 @@ class YoungGenerationMarkingTask {
                               Page::kPageSize);
   }
 
-  int slots() const { return slots_; }
-
-  void IncrementSlots() { ++slots_; }
-
   void MarkObject(Object object) {
     if (!Heap::InYoungGeneration(object)) return;
     HeapObject heap_object = HeapObject::cast(object);
@@ -4799,7 +4762,6 @@ class YoungGenerationMarkingTask {
   MinorMarkCompactCollector::MarkingState* marking_state_;
   YoungGenerationMarkingVisitor visitor_;
   std::unordered_map<Page*, intptr_t, Page::Hasher> local_live_bytes_;
-  int slots_ = 0;
 };
 
 class PageMarkingItem : public ParallelWorkItem {
@@ -4864,7 +4826,6 @@ class PageMarkingItem : public ParallelWorkItem {
       USE(success);
       DCHECK(success);
       task->MarkObject(heap_object);
-      task->IncrementSlots();
       return KEEP_SLOT;
     }
     return REMOVE_SLOT;
@@ -4878,14 +4839,13 @@ class YoungGenerationMarkingJob : public v8::JobTask {
   YoungGenerationMarkingJob(
       Isolate* isolate, MinorMarkCompactCollector* collector,
       MinorMarkCompactCollector::MarkingWorklist* global_worklist,
-      std::vector<PageMarkingItem> marking_items, std::atomic<int>* slots)
+      std::vector<PageMarkingItem> marking_items)
       : isolate_(isolate),
         collector_(collector),
         global_worklist_(global_worklist),
         marking_items_(std::move(marking_items)),
         remaining_marking_items_(marking_items_.size()),
-        generator_(marking_items_.size()),
-        slots_(slots) {}
+        generator_(marking_items_.size()) {}
 
   void Run(JobDelegate* delegate) override {
     if (delegate->IsJoiningThread()) {
@@ -4921,7 +4881,6 @@ class YoungGenerationMarkingJob : public v8::JobTask {
       ProcessMarkingItems(&task);
       task.EmptyMarkingWorklist();
       task.FlushLiveBytes();
-      *slots_ += task.slots();
     }
     if (FLAG_trace_minor_mc_parallel_marking) {
       PrintIsolate(collector_->isolate(), "marking[%p]: time=%f\n",
@@ -4952,12 +4911,10 @@ class YoungGenerationMarkingJob : public v8::JobTask {
   std::vector<PageMarkingItem> marking_items_;
   std::atomic_size_t remaining_marking_items_{0};
   IndexGenerator generator_;
-  std::atomic<int>* slots_;
 };
 
 void MinorMarkCompactCollector::MarkRootSetInParallel(
     RootMarkingVisitor* root_visitor) {
-  std::atomic<int> slots;
   {
     std::vector<PageMarkingItem> marking_items;
 
@@ -4992,14 +4949,12 @@ void MinorMarkCompactCollector::MarkRootSetInParallel(
       V8::GetCurrentPlatform()
           ->PostJob(v8::TaskPriority::kUserBlocking,
                     std::make_unique<YoungGenerationMarkingJob>(
-                        isolate(), this, worklist(), std::move(marking_items),
-                        &slots))
+                        isolate(), this, worklist(), std::move(marking_items)))
           ->Join();
 
       DCHECK(worklist()->IsEmpty());
     }
   }
-  old_to_new_slots_ = slots;
 }
 
 void MinorMarkCompactCollector::MarkLiveObjects() {

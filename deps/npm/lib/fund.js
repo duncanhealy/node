@@ -12,27 +12,39 @@ const {
 } = require('libnpmfund')
 
 const completion = require('./utils/completion/installed-deep.js')
-const output = require('./utils/output.js')
 const openUrl = require('./utils/open-url.js')
-const usageUtil = require('./utils/usage.js')
+const ArboristWorkspaceCmd = require('./workspaces/arborist-cmd.js')
 
 const getPrintableName = ({ name, version }) => {
   const printableVersion = version ? `@${version}` : ''
   return `${name}${printableVersion}`
 }
 
-class Fund {
-  constructor (npm) {
-    this.npm = npm
+class Fund extends ArboristWorkspaceCmd {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Retrieve funding information'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil(
-      'fund',
-      'npm fund',
-      'npm fund [--json] [--browser] [--unicode] [[<@scope>/]<pkg> [--which=<fundingSourceNumber>]'
-    )
+  static get name () {
+    return 'fund'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'json',
+      'browser',
+      'unicode',
+      'workspace',
+      'which',
+    ]
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['[[<@scope>/]<pkg>]']
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
@@ -45,14 +57,13 @@ class Fund {
   }
 
   async fund (args) {
-    const opts = this.npm.flatOptions
     const spec = args[0]
-    const numberArg = opts.which
+    const numberArg = this.npm.config.get('which')
 
     const fundingSourceNumber = numberArg && parseInt(numberArg, 10)
 
     const badFundingSourceNumber =
-      numberArg !== undefined &&
+      numberArg !== null &&
       (String(fundingSourceNumber) !== numberArg || fundingSourceNumber < 1)
 
     if (badFundingSourceNumber) {
@@ -61,14 +72,14 @@ class Fund {
       throw err
     }
 
-    if (opts.global) {
+    if (this.npm.config.get('global')) {
       const err = new Error('`npm fund` does not support global packages')
       err.code = 'EFUNDGLOBAL'
       throw err
     }
 
     const where = this.npm.prefix
-    const arb = new Arborist({ ...opts, path: where })
+    const arb = new Arborist({ ...this.npm.flatOptions, path: where })
     const tree = await arb.loadActual()
 
     if (spec) {
@@ -81,23 +92,25 @@ class Fund {
       return
     }
 
-    const print = opts.json
-      ? this.printJSON
-      : this.printHuman
+    const fundingInfo = getFundingInfo(tree, {
+      ...this.flatOptions,
+      log: this.npm.log,
+      workspaces: this.workspaceNames,
+    })
 
-    output(
-      print(
-        getFundingInfo(tree),
-        opts
-      )
-    )
+    if (this.npm.config.get('json'))
+      this.npm.output(this.printJSON(fundingInfo))
+    else
+      this.npm.output(this.printHuman(fundingInfo))
   }
 
   printJSON (fundingInfo) {
     return JSON.stringify(fundingInfo, null, 2)
   }
 
-  printHuman (fundingInfo, { color, unicode }) {
+  printHuman (fundingInfo) {
+    const color = !!this.npm.color
+    const unicode = this.npm.config.get('unicode')
     const seenUrls = new Map()
 
     const tree = obj =>
@@ -206,9 +219,9 @@ class Fund {
       validSources.forEach(({ type, url }, i) => {
         const typePrefix = type ? `${type} funding` : 'Funding'
         const msg = `${typePrefix} available at the following URL`
-        output(`${i + 1}: ${msg}: ${url}`)
+        this.npm.output(`${i + 1}: ${msg}: ${url}`)
       })
-      output('Run `npm fund [<@scope>/]<pkg> --which=1`, for example, to open the first funding URL listed in that package')
+      this.npm.output('Run `npm fund [<@scope>/]<pkg> --which=1`, for example, to open the first funding URL listed in that package')
     } else {
       const noFundingError = new Error(`No valid funding method available for: ${spec}`)
       noFundingError.code = 'ENOFUND'

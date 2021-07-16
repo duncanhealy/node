@@ -4,18 +4,28 @@
 const { resolve } = require('path')
 const fs = require('graceful-fs')
 const { spawn } = require('child_process')
-const usageUtil = require('./utils/usage.js')
 const splitPackageNames = require('./utils/split-package-names.js')
 const completion = require('./utils/completion/installed-shallow.js')
+const BaseCommand = require('./base-command.js')
 
-class Edit {
-  constructor (npm) {
-    this.npm = npm
+class Edit extends BaseCommand {
+  static get description () {
+    return 'Edit an installed package'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('edit', 'npm edit <pkg>[/<subpkg>...]')
+  static get name () {
+    return 'edit'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['<pkg>[/<subpkg>...]']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return ['editor']
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */

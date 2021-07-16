@@ -1,5 +1,5 @@
-const { test } = require('tap')
-const requireInject = require('require-inject')
+const t = require('tap')
+const { fake: mockNpm } = require('../fixtures/mock-npm')
 
 const version = '1.0.0'
 const funding = {
@@ -180,19 +180,18 @@ const conflictingFundingPackages = {
 
 let result = ''
 let printUrl = ''
-const _flatOptions = {
+const config = {
   color: false,
   json: false,
   global: false,
-  prefix: undefined,
   unicode: false,
-  which: undefined,
+  which: null,
 }
 const openUrl = async (npm, url, msg) => {
   if (url === 'http://npmjs.org')
     throw new Error('ERROR')
 
-  if (_flatOptions.json) {
+  if (config.json) {
     printUrl = JSON.stringify({
       title: msg,
       url: url,
@@ -200,11 +199,8 @@ const openUrl = async (npm, url, msg) => {
   } else
     printUrl = `${msg}:\n  ${url}`
 }
-const Fund = requireInject('../../lib/fund.js', {
+const Fund = t.mock('../../lib/fund.js', {
   '../../lib/utils/open-url.js': openUrl,
-  '../../lib/utils/output.js': msg => {
-    result += msg + '\n'
-  },
   pacote: {
     manifest: (arg) => arg.name === 'ntl'
       ? Promise.resolve({
@@ -213,15 +209,16 @@ const Fund = requireInject('../../lib/fund.js', {
       : Promise.reject(new Error('ERROR')),
   },
 })
-const fund = new Fund({
-  flatOptions: _flatOptions,
-  get prefix () {
-    return _flatOptions.prefix
+const npm = mockNpm({
+  config,
+  output: msg => {
+    result += msg + '\n'
   },
 })
+const fund = new Fund(npm)
 
-test('fund with no package containing funding', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund with no package containing funding', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'no-funding-package',
       version: '0.0.0',
@@ -229,31 +226,31 @@ test('fund with no package containing funding', t => {
   })
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(result, 'should print empty funding info')
     result = ''
     t.end()
   })
 })
 
-test('fund in which same maintainer owns all its deps', t => {
-  _flatOptions.prefix = t.testdir(maintainerOwnsAllDeps)
+t.test('fund in which same maintainer owns all its deps', t => {
+  npm.prefix = t.testdir(maintainerOwnsAllDeps)
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(result, 'should print stack packages together')
     result = ''
     t.end()
   })
 })
 
-test('fund in which same maintainer owns all its deps, using --json option', t => {
-  _flatOptions.json = true
-  _flatOptions.prefix = t.testdir(maintainerOwnsAllDeps)
+t.test('fund in which same maintainer owns all its deps, using --json option', t => {
+  config.json = true
+  npm.prefix = t.testdir(maintainerOwnsAllDeps)
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
-    t.deepEqual(
+    t.error(err, 'should not error out')
+    t.same(
       JSON.parse(result),
       {
         length: 3,
@@ -281,16 +278,16 @@ test('fund in which same maintainer owns all its deps, using --json option', t =
     )
 
     result = ''
-    _flatOptions.json = false
+    config.json = false
     t.end()
   })
 })
 
-test('fund containing multi-level nested deps with no funding', t => {
-  _flatOptions.prefix = t.testdir(nestedNoFundingPackages)
+t.test('fund containing multi-level nested deps with no funding', t => {
+  npm.prefix = t.testdir(nestedNoFundingPackages)
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(
       result,
       'should omit dependencies with no funding declared'
@@ -301,13 +298,13 @@ test('fund containing multi-level nested deps with no funding', t => {
   })
 })
 
-test('fund containing multi-level nested deps with no funding, using --json option', t => {
-  _flatOptions.prefix = t.testdir(nestedNoFundingPackages)
-  _flatOptions.json = true
+t.test('fund containing multi-level nested deps with no funding, using --json option', t => {
+  npm.prefix = t.testdir(nestedNoFundingPackages)
+  config.json = true
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
-    t.deepEqual(
+    t.error(err, 'should not error out')
+    t.same(
       JSON.parse(result),
       {
         length: 2,
@@ -328,18 +325,18 @@ test('fund containing multi-level nested deps with no funding, using --json opti
     )
 
     result = ''
-    _flatOptions.json = false
+    config.json = false
     t.end()
   })
 })
 
-test('fund containing multi-level nested deps with no funding, using --json option', t => {
-  _flatOptions.prefix = t.testdir(nestedMultipleFundingPackages)
-  _flatOptions.json = true
+t.test('fund containing multi-level nested deps with no funding, using --json option', t => {
+  npm.prefix = t.testdir(nestedMultipleFundingPackages)
+  config.json = true
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
-    t.deepEqual(
+    t.error(err, 'should not error out')
+    t.same(
       JSON.parse(result),
       {
         length: 2,
@@ -385,29 +382,29 @@ test('fund containing multi-level nested deps with no funding, using --json opti
     )
 
     result = ''
-    _flatOptions.json = false
+    config.json = false
     t.end()
   })
 })
 
-test('fund does not support global', t => {
-  _flatOptions.prefix = t.testdir({})
-  _flatOptions.global = true
+t.test('fund does not support global', t => {
+  npm.prefix = t.testdir({})
+  config.global = true
 
   fund.exec([], (err) => {
     t.match(err.code, 'EFUNDGLOBAL', 'should throw EFUNDGLOBAL error')
 
     result = ''
-    _flatOptions.global = false
+    config.global = false
     t.end()
   })
 })
 
-test('fund using package argument', t => {
-  _flatOptions.prefix = t.testdir(maintainerOwnsAllDeps)
+t.test('fund using package argument', t => {
+  npm.prefix = t.testdir(maintainerOwnsAllDeps)
 
   fund.exec(['.'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(printUrl, 'should open funding url')
 
     printUrl = ''
@@ -415,10 +412,10 @@ test('fund using package argument', t => {
   })
 })
 
-test('fund does not support global, using --json option', t => {
-  _flatOptions.prefix = t.testdir({})
-  _flatOptions.global = true
-  _flatOptions.json = true
+t.test('fund does not support global, using --json option', t => {
+  npm.prefix = t.testdir({})
+  config.global = true
+  config.json = true
 
   fund.exec([], (err) => {
     t.equal(err.code, 'EFUNDGLOBAL', 'should use EFUNDGLOBAL error code')
@@ -428,14 +425,14 @@ test('fund does not support global, using --json option', t => {
       'should use expected error msg'
     )
 
-    _flatOptions.global = false
-    _flatOptions.json = false
+    config.global = false
+    config.json = false
     t.end()
   })
 })
 
-test('fund using string shorthand', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund using string shorthand', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'funding-string-shorthand',
       version: '0.0.0',
@@ -444,7 +441,7 @@ test('fund using string shorthand', t => {
   })
 
   fund.exec(['.'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(printUrl, 'should open string-only url')
 
     printUrl = ''
@@ -452,11 +449,11 @@ test('fund using string shorthand', t => {
   })
 })
 
-test('fund using nested packages with multiple sources', t => {
-  _flatOptions.prefix = t.testdir(nestedMultipleFundingPackages)
+t.test('fund using nested packages with multiple sources', t => {
+  npm.prefix = t.testdir(nestedMultipleFundingPackages)
 
   fund.exec(['.'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(result, 'should prompt with all available URLs')
 
     result = ''
@@ -464,8 +461,8 @@ test('fund using nested packages with multiple sources', t => {
   })
 })
 
-test('fund using symlink ref', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund using symlink ref', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'using-symlink-ref',
       version: '1.0.0',
@@ -484,7 +481,7 @@ test('fund using symlink ref', t => {
 
   // using symlinked ref
   fund.exec(['./node_modules/a'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.match(
       printUrl,
       'http://example.com/a',
@@ -495,7 +492,7 @@ test('fund using symlink ref', t => {
 
     // using target ref
     fund.exec(['./a'], (err) => {
-      t.ifError(err, 'should not error out')
+      t.error(err, 'should not error out')
 
       t.match(
         printUrl,
@@ -510,8 +507,8 @@ test('fund using symlink ref', t => {
   })
 })
 
-test('fund using data from actual tree', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund using data from actual tree', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'using-actual-tree',
       version: '1.0.0',
@@ -545,7 +542,7 @@ test('fund using data from actual tree', t => {
 
   // using symlinked ref
   fund.exec(['a'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.match(
       printUrl,
       'http://example.com/_AAA',
@@ -557,26 +554,26 @@ test('fund using data from actual tree', t => {
   })
 })
 
-test('fund using nested packages with multiple sources, with a source number', t => {
-  _flatOptions.prefix = t.testdir(nestedMultipleFundingPackages)
-  _flatOptions.which = '1'
+t.test('fund using nested packages with multiple sources, with a source number', t => {
+  npm.prefix = t.testdir(nestedMultipleFundingPackages)
+  config.which = '1'
 
   fund.exec(['.'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(printUrl, 'should open the numbered URL')
 
-    _flatOptions.which = undefined
+    config.which = null
     printUrl = ''
     t.end()
   })
 })
 
-test('fund using pkg name while having conflicting versions', t => {
-  _flatOptions.prefix = t.testdir(conflictingFundingPackages)
-  _flatOptions.which = '1'
+t.test('fund using pkg name while having conflicting versions', t => {
+  npm.prefix = t.testdir(conflictingFundingPackages)
+  config.which = '1'
 
   fund.exec(['foo'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(printUrl, 'should open greatest version')
 
     printUrl = ''
@@ -584,13 +581,13 @@ test('fund using pkg name while having conflicting versions', t => {
   })
 })
 
-test('fund using package argument with no browser, using --json option', t => {
-  _flatOptions.prefix = t.testdir(maintainerOwnsAllDeps)
-  _flatOptions.json = true
+t.test('fund using package argument with no browser, using --json option', t => {
+  npm.prefix = t.testdir(maintainerOwnsAllDeps)
+  config.json = true
 
   fund.exec(['.'], (err) => {
-    t.ifError(err, 'should not error out')
-    t.deepEqual(
+    t.error(err, 'should not error out')
+    t.same(
       JSON.parse(printUrl),
       {
         title: 'individual funding available at the following URL',
@@ -599,17 +596,17 @@ test('fund using package argument with no browser, using --json option', t => {
       'should open funding url using json output'
     )
 
-    _flatOptions.json = false
+    config.json = false
     printUrl = ''
     t.end()
   })
 })
 
-test('fund using package info fetch from registry', t => {
-  _flatOptions.prefix = t.testdir({})
+t.test('fund using package info fetch from registry', t => {
+  npm.prefix = t.testdir({})
 
   fund.exec(['ntl'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.match(
       printUrl,
       /http:\/\/example.com\/pacote/,
@@ -621,8 +618,8 @@ test('fund using package info fetch from registry', t => {
   })
 })
 
-test('fund tries to use package info fetch from registry but registry has nothing', t => {
-  _flatOptions.prefix = t.testdir({})
+t.test('fund tries to use package info fetch from registry but registry has nothing', t => {
+  npm.prefix = t.testdir({})
 
   fund.exec(['foo'], (err) => {
     t.equal(err.code, 'ENOFUND', 'should have ENOFUND error code')
@@ -637,8 +634,8 @@ test('fund tries to use package info fetch from registry but registry has nothin
   })
 })
 
-test('fund but target module has no funding info', t => {
-  _flatOptions.prefix = t.testdir(nestedNoFundingPackages)
+t.test('fund but target module has no funding info', t => {
+  npm.prefix = t.testdir(nestedNoFundingPackages)
 
   fund.exec(['foo'], (err) => {
     t.equal(err.code, 'ENOFUND', 'should have ENOFUND error code')
@@ -653,9 +650,9 @@ test('fund but target module has no funding info', t => {
   })
 })
 
-test('fund using bad which value', t => {
-  _flatOptions.prefix = t.testdir(nestedMultipleFundingPackages)
-  _flatOptions.which = 3
+t.test('fund using bad which value', t => {
+  npm.prefix = t.testdir(nestedMultipleFundingPackages)
+  config.which = 3
 
   fund.exec(['bar'], (err) => {
     t.equal(err.code, 'EFUNDNUMBER', 'should have EFUNDNUMBER error code')
@@ -665,14 +662,14 @@ test('fund using bad which value', t => {
       'should have bad which option error message'
     )
 
-    _flatOptions.which = undefined
+    config.which = null
     result = ''
     t.end()
   })
 })
 
-test('fund pkg missing version number', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund pkg missing version number', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'foo',
       funding: 'http://example.com/foo',
@@ -680,15 +677,15 @@ test('fund pkg missing version number', t => {
   })
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(result, 'should print name only')
     result = ''
     t.end()
   })
 })
 
-test('fund a package throws on openUrl', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund a package throws on openUrl', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'foo',
       version: '1.0.0',
@@ -703,8 +700,8 @@ test('fund a package throws on openUrl', t => {
   })
 })
 
-test('fund a package with type and multiple sources', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund a package with type and multiple sources', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'foo',
       funding: [
@@ -721,7 +718,7 @@ test('fund a package with type and multiple sources', t => {
   })
 
   fund.exec(['.'], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(result, 'should print prompt select message')
 
     result = ''
@@ -729,8 +726,8 @@ test('fund a package with type and multiple sources', t => {
   })
 })
 
-test('fund colors', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('fund colors', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'test-fund-colors',
       version: '1.0.0',
@@ -782,20 +779,20 @@ test('fund colors', t => {
       },
     },
   })
-  _flatOptions.color = true
+  npm.color = true
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(result, 'should print output with color info')
 
     result = ''
-    _flatOptions.color = false
+    npm.color = false
     t.end()
   })
 })
 
-test('sub dep with fund info and a parent with no funding info', t => {
-  _flatOptions.prefix = t.testdir({
+t.test('sub dep with fund info and a parent with no funding info', t => {
+  npm.prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'test-multiple-funding-sources',
       version: '1.0.0',
@@ -835,10 +832,96 @@ test('sub dep with fund info and a parent with no funding info', t => {
   })
 
   fund.exec([], (err) => {
-    t.ifError(err, 'should not error out')
+    t.error(err, 'should not error out')
     t.matchSnapshot(result, 'should nest sub dep as child of root')
 
     result = ''
     t.end()
   })
+})
+
+t.test('workspaces', t => {
+  t.test('filter funding info by a specific workspace', async t => {
+    npm.localPrefix = npm.prefix = t.testdir({
+      'package.json': JSON.stringify({
+        name: 'workspaces-support',
+        version: '1.0.0',
+        workspaces: ['packages/*'],
+        dependencies: {
+          d: '^1.0.0',
+        },
+      }),
+      node_modules: {
+        a: t.fixture('symlink', '../packages/a'),
+        b: t.fixture('symlink', '../packages/b'),
+        c: {
+          'package.json': JSON.stringify({
+            name: 'c',
+            version: '1.0.0',
+            funding: [
+              'http://example.com/c',
+              'http://example.com/c-other',
+            ],
+          }),
+        },
+        d: {
+          'package.json': JSON.stringify({
+            name: 'd',
+            version: '1.0.0',
+            funding: 'http://example.com/d',
+          }),
+        },
+      },
+      packages: {
+        a: {
+          'package.json': JSON.stringify({
+            name: 'a',
+            version: '1.0.0',
+            funding: 'https://example.com/a',
+            dependencies: {
+              c: '^1.0.0',
+            },
+          }),
+        },
+        b: {
+          'package.json': JSON.stringify({
+            name: 'b',
+            version: '1.0.0',
+            funding: 'http://example.com/b',
+            dependencies: {
+              d: '^1.0.0',
+            },
+          }),
+        },
+      },
+    })
+
+    await new Promise((res, rej) => {
+      fund.execWorkspaces([], ['a'], (err) => {
+        if (err)
+          rej(err)
+
+        t.matchSnapshot(result,
+          'should display only filtered workspace name and its deps')
+
+        result = ''
+        res()
+      })
+    })
+
+    await new Promise((res, rej) => {
+      fund.execWorkspaces([], ['./packages/a'], (err) => {
+        if (err)
+          rej(err)
+
+        t.matchSnapshot(result,
+          'should display only filtered workspace path and its deps')
+
+        result = ''
+        res()
+      })
+    })
+  })
+
+  t.end()
 })

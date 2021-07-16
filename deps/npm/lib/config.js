@@ -1,6 +1,5 @@
-const { defaults, types } = require('./utils/config.js')
-const usageUtil = require('./utils/usage.js')
-const output = require('./utils/output.js')
+// don't expand so that we only assemble the set of defaults when needed
+const configDefs = require('./utils/config/index.js')
 
 const mkdirp = require('mkdirp-infer-owner')
 const { dirname } = require('path')
@@ -29,22 +28,36 @@ const keyValues = args => {
 
 const publicVar = k => !/^(\/\/[^:]+:)?_/.test(k)
 
-class Config {
-  constructor (npm) {
-    this.npm = npm
+const BaseCommand = require('./base-command.js')
+class Config extends BaseCommand {
+  static get description () {
+    return 'Manage the npm configuration files'
   }
 
-  get usage () {
-    return usageUtil(
-      'config',
-      'npm config set <key>=<value> [<key>=<value> ...]' +
-      '\nnpm config get [<key> [<key> ...]]' +
-      '\nnpm config delete <key> [<key> ...]' +
-      '\nnpm config list [--json]' +
-      '\nnpm config edit' +
-      '\nnpm set <key>=<value> [<key>=<value> ...]' +
-      '\nnpm get [<key> [<key> ...]]'
-    )
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get name () {
+    return 'config'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return [
+      'set <key>=<value> [<key>=<value> ...]',
+      'get [<key> [<key> ...]]',
+      'delete <key> [<key> ...]',
+      'list [--json]',
+      'edit',
+    ]
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'json',
+      'global',
+      'editor',
+      'long',
+    ]
   }
 
   async completion (opts) {
@@ -72,7 +85,7 @@ class Config {
       case 'get':
       case 'delete':
       case 'rm':
-        return Object.keys(types)
+        return Object.keys(configDefs.definitions)
       case 'edit':
       case 'list':
       case 'ls':
@@ -83,6 +96,11 @@ class Config {
 
   exec (args, cb) {
     this.config(args).then(() => cb()).catch(cb)
+  }
+
+  execWorkspaces (args, filters, cb) {
+    this.npm.log.warn('config', 'This command does not support workspaces.')
+    this.exec(args, cb)
   }
 
   async config ([action, ...args]) {
@@ -102,7 +120,7 @@ class Config {
           break
         case 'list':
         case 'ls':
-          await (this.npm.flatOptions.json ? this.listJson() : this.list())
+          await (this.npm.config.get('json') ? this.listJson() : this.list())
           break
         case 'edit':
           await this.edit()
@@ -119,7 +137,7 @@ class Config {
     if (!args.length)
       throw this.usageError()
 
-    const where = this.npm.flatOptions.global ? 'global' : 'user'
+    const where = this.npm.config.get('global') ? 'global' : 'user'
     for (const [key, val] of Object.entries(keyValues(args))) {
       this.npm.log.info('config', 'set %j %j', key, val)
       this.npm.config.set(key, val || '', where)
@@ -142,21 +160,22 @@ class Config {
       const pref = keys.length > 1 ? `${key}=` : ''
       out.push(pref + this.npm.config.get(key))
     }
-    output(out.join('\n'))
+    this.npm.output(out.join('\n'))
   }
 
   async del (keys) {
     if (!keys.length)
       throw this.usageError()
 
-    const where = this.npm.flatOptions.global ? 'global' : 'user'
+    const where = this.npm.config.get('global') ? 'global' : 'user'
     for (const key of keys)
       this.npm.config.delete(key, where)
     await this.npm.config.save(where)
   }
 
   async edit () {
-    const { editor: e, global } = this.npm.flatOptions
+    const global = this.npm.config.get('global')
+    const e = this.npm.config.get('editor')
     const where = global ? 'global' : 'user'
     const file = this.npm.config.data.get(where).source
 
@@ -167,7 +186,8 @@ class Config {
     const data = (
       await readFile(file, 'utf8').catch(() => '')
     ).replace(/\r\n/g, '\n')
-    const defData = Object.entries(defaults).reduce((str, [key, val]) => {
+    const entries = Object.entries(configDefs.defaults)
+    const defData = entries.reduce((str, [key, val]) => {
       const obj = { [key]: val }
       const i = ini.stringify(obj)
         .replace(/\r\n/g, '\n') // normalizes output from ini.stringify
@@ -189,7 +209,7 @@ class Config {
 ; Configs like \`//<hostname>/:_authToken\` are auth that is restricted
 ; to the registry host specified.
 
-${data.split('\n').sort((a, b) => a.localeCompare(b)).join('\n').trim()}
+${data.split('\n').sort((a, b) => a.localeCompare(b, 'en')).join('\n').trim()}
 
 ;;;;
 ; all available options shown below with default values
@@ -212,12 +232,12 @@ ${defData}
 
   async list () {
     const msg = []
-    const { long } = this.npm.flatOptions
+    const long = this.npm.config.get('long')
     for (const [where, { data, source }] of this.npm.config.data.entries()) {
       if (where === 'default' && !long)
         continue
 
-      const keys = Object.keys(data).sort((a, b) => a.localeCompare(b))
+      const keys = Object.keys(data).sort((a, b) => a.localeCompare(b, 'en'))
       if (!keys.length)
         continue
 
@@ -241,7 +261,7 @@ ${defData}
       )
     }
 
-    output(msg.join('\n').trim())
+    this.npm.output(msg.join('\n').trim())
   }
 
   async listJson () {
@@ -252,11 +272,7 @@ ${defData}
 
       publicConf[key] = this.npm.config.get(key)
     }
-    output(JSON.stringify(publicConf, null, 2))
-  }
-
-  usageError () {
-    return Object.assign(new Error(this.usage), { code: 'EUSAGE' })
+    this.npm.output(JSON.stringify(publicConf, null, 2))
   }
 }
 

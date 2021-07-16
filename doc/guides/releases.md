@@ -128,7 +128,7 @@ Build is essential to make sure that the CI works, release files are published,
 and the release blog post is available on the project website.
 
 Build can be contacted best by opening up an issue on the [Build issue
-tracker][], and by posting in `#node-build` on [webchat.freenode.net][].
+tracker][].
 
 When preparing a security release, contact Build at least two weekdays in
 advance of the expected release. To ensure that the security patch(es) can be
@@ -175,10 +175,10 @@ duplicate or not.
 For a list of commits that could be landed in a patch release on v1.x:
 
 ```console
-$ branch-diff v1.x-staging master --exclude-label=semver-major,semver-minor,dont-land-on-v1.x,backport-requested-v1.x --filter-release --format=simple
+$ branch-diff v1.x-staging master --exclude-label=semver-major,semver-minor,dont-land-on-v1.x,backport-requested-v1.x,backport-blocked-v1.x --filter-release --format=simple
 ```
 
-Previous release commits and version bumps do not need to be
+Previously released commits and version bumps do not need to be
 cherry-picked.
 
 Carefully review the list of commits:
@@ -187,8 +187,16 @@ Carefully review the list of commits:
 * Checking semver status - Commits labeled as `semver-minor` or `semver-major`
 should only be cherry-picked when appropriate for the type of release being
 made.
-* If you think it's risky so should wait for a while, add the `baking-for-lts`
-tag.
+* If you think it's risky and the change should wait for a while, add the
+`baking-for-lts` tag.
+
+When you are ready to cherry-pick commits, you can automate with the following
+command. (For semver-minor releases, make sure to remove the `semver-minor` tag
+from `exclude-label`.)
+
+```console
+$ branch-diff v1.x-staging master --exclude-label=semver-major,semver-minor,dont-land-on-v1.x,backport-requested-v1.x,backport-blocked-v1.x --filter-release --format=sha --reverse | xargs git cherry-pick
+```
 
 When cherry-picking commits, if there are simple conflicts you can resolve
 them. Otherwise, add the `backport-requested-vN.x` label to the original PR
@@ -196,8 +204,13 @@ and post a comment stating that it does not land cleanly and will require a
 backport PR. You can refer the owner of the PR to the "[Backporting to Release
  Lines](https://github.com/nodejs/node/blob/HEAD/doc/guides/backporting-to-release-lines.md)" guide.
 
-If commits were cherry-picked in this step, check that the test still pass and
-push to the staging branch to keep it up-to-date.
+If commits were cherry-picked in this step, check that the test still pass.
+
+```console
+$ make test
+```
+
+Then, push to the staging branch to keep it up-to-date.
 
 ```console
 $ git push upstream v1.x-staging
@@ -274,8 +287,10 @@ in the repository was not on the current branch you may have to supply a
 `--start-ref` argument:
 
 ```console
-$ changelog-maker --group --start-ref v1.2.2
+$ changelog-maker --group --filter-release --start-ref v1.2.2
 ```
+
+`--filter-release` will remove the release commit from the previous release.
 
 #### Step 2: Update the appropriate doc/changelogs/CHANGELOG_*.md file
 
@@ -383,7 +398,19 @@ Create a pull request targeting the correct release line. For example, a
 `v5.3.0-proposal` PR should target `v5.x`, not master. Paste the CHANGELOG
 modifications into the body of the PR so that collaborators can see what is
 changing. These PRs should be left open for at least 24 hours, and can be
-updated as new commits land.
+updated as new commits land. If the CHANGELOG pasted into the pull request
+is long enough that it slows down the GitHub UI, consider pasting the commits
+into `<details>` tags or in follow up comments.
+
+If using the `<details>` tag, use the following format:
+
+```markdown
+<details>
+<summary>Commits</summary>
+
+* Full list of commits...
+</details>
+```
 
 If you need any additional information about any of the commits, this PR is a
 good place to @-mention the relevant contributors.
@@ -568,9 +595,9 @@ $ git push upstream master
 
 ### 14. Push the release tag
 
-Push the tag to the repo before you promote the builds. If you haven't pushed
-your tag first, then build promotion won't work properly. Push the tag using the
-following command:
+Push the tag to the repository before you promote the builds. If you
+haven't pushed your tag first, then build promotion won't work properly.
+Push the tag using the following command:
 
 ```console
 $ git push <remote> <vx.y.z>
@@ -881,9 +908,19 @@ test, or doc-related are to be listed as notable changes. Some SEMVER-MINOR
 commits may be listed as notable changes on a case-by-case basis. Use your
 judgment there.
 
+### Snap
+
+The Node.js [Snap][] package has a "default" for installs where the user hasn't
+specified a release line ("track" in Snap terminology). This should be updated
+to point to the most recently activated LTS. A member of the Node.js Build
+Infrastructure team is able to perform the switch of the default. An issue
+should be opened on the [Node.js Snap management repository][] requesting this
+take place once a new LTS line has been released.
+
 [Build issue tracker]: https://github.com/nodejs/build/issues/new
 [CI lockdown procedure]: https://github.com/nodejs/build/blob/HEAD/doc/jenkins-guide.md#restricting-access-for-security-releases
+[Node.js Snap management repository]: https://github.com/nodejs/snap
 [Partner Communities]: https://github.com/nodejs/community-committee/blob/HEAD/governance/PARTNER_COMMUNITIES.md
+[Snap]: https://snapcraft.io/node
 [nodejs.org release-post.js script]: https://github.com/nodejs/nodejs.org/blob/HEAD/scripts/release-post.js
 [nodejs.org repository]: https://github.com/nodejs/nodejs.org
-[webchat.freenode.net]: https://webchat.freenode.net/

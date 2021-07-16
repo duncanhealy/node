@@ -7,7 +7,6 @@ const fs = require('fs')
 const readdir = util.promisify(fs.readdir)
 
 const log = require('npmlog')
-const usageUtil = require('./utils/usage.js')
 
 const removeNodeModules = async where => {
   const rimrafOpts = { glob: false }
@@ -18,15 +17,25 @@ const removeNodeModules = async where => {
   await Promise.all(entries.map(f => rimraf(`${path}/${f}`, rimrafOpts)))
   process.emit('timeEnd', 'npm-ci:rm')
 }
+const ArboristWorkspaceCmd = require('./workspaces/arborist-cmd.js')
 
-class CI {
-  constructor (npm) {
-    this.npm = npm
+class CI extends ArboristWorkspaceCmd {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Install a project with a clean slate'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('ci', 'npm ci')
+  static get name () {
+    return 'ci'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'ignore-scripts',
+      'script-shell',
+    ]
   }
 
   exec (args, cb) {
@@ -34,16 +43,22 @@ class CI {
   }
 
   async ci () {
-    if (this.npm.flatOptions.global) {
+    if (this.npm.config.get('global')) {
       const err = new Error('`npm ci` does not work for global packages')
       err.code = 'ECIGLOBAL'
       throw err
     }
 
     const where = this.npm.prefix
-    const { scriptShell, ignoreScripts } = this.npm.flatOptions
-    const arb = new Arborist({ ...this.npm.flatOptions, path: where })
+    const opts = {
+      ...this.npm.flatOptions,
+      path: where,
+      log: this.npm.log,
+      save: false, // npm ci should never modify the lockfile or package.json
+      workspaces: this.workspaceNames,
+    }
 
+    const arb = new Arborist(opts)
     await Promise.all([
       arb.loadVirtual().catch(er => {
         log.verbose('loadVirtual', er.stack)
@@ -55,9 +70,9 @@ class CI {
       }),
       removeNodeModules(where),
     ])
-    // npm ci should never modify the lockfile or package.json
-    await arb.reify({ ...this.npm.flatOptions, save: false })
+    await arb.reify(opts)
 
+    const ignoreScripts = this.npm.config.get('ignore-scripts')
     // run the same set of scripts that `npm install` runs.
     if (!ignoreScripts) {
       const scripts = [
@@ -69,6 +84,7 @@ class CI {
         'prepare',
         'postprepare',
       ]
+      const scriptShell = this.npm.config.get('script-shell') || undefined
       for (const event of scripts) {
         await runScript({
           path: where,

@@ -1,17 +1,10 @@
 const t = require('tap')
-const requireInject = require('require-inject')
+const { fake: mockNpm } = require('../fixtures/mock-npm.js')
 const path = require('path')
 
 const usageUtil = () => 'usage instructions'
 
-const flatOptions = {
-  force: false,
-}
-
-const npm = {
-  flatOptions,
-  cache: '/fake/path',
-}
+let outputOutput = []
 
 let rimrafPath = ''
 const rimraf = (path, cb) => {
@@ -41,11 +34,6 @@ const pacote = {
   },
 }
 
-let outputOutput = []
-const output = (msg) => {
-  outputOutput.push(msg)
-}
-
 const cacacheVerifyStats = {
   keptSize: 100,
   verifiedContent: 1,
@@ -58,20 +46,27 @@ const cacache = {
   },
 }
 
-const Cache = requireInject('../../lib/cache.js', {
+const Cache = t.mock('../../lib/cache.js', {
   cacache,
   npmlog,
   pacote,
   rimraf,
-  '../../lib/utils/output.js': output,
   '../../lib/utils/usage.js': usageUtil,
 })
 
+const npm = mockNpm({
+  cache: '/fake/path',
+  flatOptions: { force: false },
+  config: { force: false },
+  output: (msg) => {
+    outputOutput.push(msg)
+  },
+})
 const cache = new Cache(npm)
 
 t.test('cache no args', t => {
   cache.exec([], err => {
-    t.equal(err.message, 'usage instructions', 'should throw usage instructions')
+    t.match(err.message, 'usage instructions', 'should throw usage instructions')
     t.end()
   })
 })
@@ -84,14 +79,16 @@ t.test('cache clean', t => {
 })
 
 t.test('cache clean (force)', t => {
-  flatOptions.force = true
+  npm.config.set('force', true)
+  npm.flatOptions.force = true
   t.teardown(() => {
     rimrafPath = ''
-    flatOptions.force = false
+    npm.config.force = false
+    npm.flatOptions.force = false
   })
 
   cache.exec(['clear'], err => {
-    t.ifError(err)
+    t.error(err)
     t.equal(rimrafPath, path.join(npm.cache, '_cacache'))
     t.end()
   })
@@ -126,32 +123,33 @@ t.test('cache add pkg only', t => {
   })
 
   cache.exec(['add', 'mypkg'], err => {
-    t.ifError(err)
+    t.error(err)
     t.strictSame(logOutput, [
       ['silly', 'cache add', 'args', ['mypkg']],
       ['silly', 'cache add', 'spec', 'mypkg'],
     ], 'logs correctly')
     t.equal(tarballStreamSpec, 'mypkg', 'passes the correct spec to pacote')
-    t.same(tarballStreamOpts, flatOptions, 'passes the correct options to pacote')
+    t.same(tarballStreamOpts, npm.flatOptions, 'passes the correct options to pacote')
     t.end()
   })
 })
 
-t.test('cache add pkg w/ spec modifier', t => {
+t.test('cache add multiple pkgs', t => {
   t.teardown(() => {
     logOutput = []
     tarballStreamSpec = ''
     tarballStreamOpts = {}
   })
 
-  cache.exec(['add', 'mypkg', 'latest'], err => {
-    t.ifError(err)
+  cache.exec(['add', 'mypkg', 'anotherpkg'], err => {
+    t.error(err)
     t.strictSame(logOutput, [
-      ['silly', 'cache add', 'args', ['mypkg', 'latest']],
-      ['silly', 'cache add', 'spec', 'mypkg@latest'],
+      ['silly', 'cache add', 'args', ['mypkg', 'anotherpkg']],
+      ['silly', 'cache add', 'spec', 'mypkg'],
+      ['silly', 'cache add', 'spec', 'anotherpkg'],
     ], 'logs correctly')
-    t.equal(tarballStreamSpec, 'mypkg@latest', 'passes the correct spec to pacote')
-    t.same(tarballStreamOpts, flatOptions, 'passes the correct options to pacote')
+    t.equal(tarballStreamSpec, 'anotherpkg', 'passes the correct spec to pacote')
+    t.same(tarballStreamOpts, npm.flatOptions, 'passes the correct options to pacote')
     t.end()
   })
 })
@@ -162,7 +160,7 @@ t.test('cache verify', t => {
   })
 
   cache.exec(['verify'], err => {
-    t.ifError(err)
+    t.error(err)
     t.match(outputOutput, [
       `Cache verified and compressed (${path.join(npm.cache, '_cacache')})`,
       'Content verified: 1 (100 bytes)',
@@ -189,7 +187,7 @@ t.test('cache verify w/ extra output', t => {
   })
 
   cache.exec(['check'], err => {
-    t.ifError(err)
+    t.error(err)
     t.match(outputOutput, [
       `Cache verified and compressed (~${path.join('/fake/path', '_cacache')})`,
       'Content verified: 1 (100 bytes)',

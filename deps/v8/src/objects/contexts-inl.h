@@ -31,11 +31,11 @@ OBJECT_CONSTRUCTORS_IMPL(ScriptContextTable, FixedArray)
 CAST_ACCESSOR(ScriptContextTable)
 
 int ScriptContextTable::synchronized_used() const {
-  return Smi::ToInt(synchronized_get(kUsedSlotIndex));
+  return Smi::ToInt(get(kUsedSlotIndex, kAcquireLoad));
 }
 
 void ScriptContextTable::synchronized_set_used(int used) {
-  synchronized_set(kUsedSlotIndex, Smi::FromInt(used));
+  set(kUsedSlotIndex, Smi::FromInt(used), kReleaseStore);
 }
 
 // static
@@ -56,8 +56,8 @@ NEVER_READ_ONLY_SPACE_IMPL(Context)
 CAST_ACCESSOR(NativeContext)
 
 V8_INLINE Object Context::get(int index) const { return elements(index); }
-V8_INLINE Object Context::get(IsolateRoot isolate, int index) const {
-  return elements(isolate, index);
+V8_INLINE Object Context::get(PtrComprCageBase cage_base, int index) const {
+  return elements(cage_base, index);
 }
 V8_INLINE void Context::set(int index, Object value) {
   set_elements(index, value);
@@ -66,16 +66,16 @@ V8_INLINE void Context::set(int index, Object value, WriteBarrierMode mode) {
   set_elements(index, value, mode);
 }
 
-void Context::set_scope_info(ScopeInfo scope_info) {
-  set(SCOPE_INFO_INDEX, scope_info);
+void Context::set_scope_info(ScopeInfo scope_info, WriteBarrierMode mode) {
+  set(SCOPE_INFO_INDEX, scope_info, mode);
 }
 
 Object Context::synchronized_get(int index) const {
-  IsolateRoot isolate = GetIsolateForPtrCompr(*this);
-  return synchronized_get(isolate, index);
+  PtrComprCageBase cage_base = GetPtrComprCageBase(*this);
+  return synchronized_get(cage_base, index);
 }
 
-Object Context::synchronized_get(IsolateRoot isolate, int index) const {
+Object Context::synchronized_get(PtrComprCageBase cage_base, int index) const {
   DCHECK_LT(static_cast<unsigned int>(index),
             static_cast<unsigned int>(this->length()));
   return ACQUIRE_READ_FIELD(*this, OffsetOfElementAt(index));
@@ -96,7 +96,9 @@ Context Context::previous() {
   DCHECK(IsBootstrappingOrValidParentContext(result, *this));
   return Context::unchecked_cast(result);
 }
-void Context::set_previous(Context context) { set(PREVIOUS_INDEX, context); }
+void Context::set_previous(Context context, WriteBarrierMode mode) {
+  set(PREVIOUS_INDEX, context, mode);
+}
 
 Object Context::next_context_link() { return get(Context::NEXT_CONTEXT_LINK); }
 
@@ -109,9 +111,9 @@ HeapObject Context::extension() {
   return HeapObject::cast(get(EXTENSION_INDEX));
 }
 
-void Context::set_extension(HeapObject object) {
+void Context::set_extension(HeapObject object, WriteBarrierMode mode) {
   DCHECK(scope_info().HasContextExtensionSlot());
-  set(EXTENSION_INDEX, object);
+  set(EXTENSION_INDEX, object, mode);
 }
 
 NativeContext Context::native_context() const {
@@ -182,7 +184,7 @@ NATIVE_CONTEXT_FIELDS(NATIVE_CONTEXT_FIELD_ACCESSORS)
   CHECK_FOLLOWS2(v3, v4)
 
 int Context::FunctionMapIndex(LanguageMode language_mode, FunctionKind kind,
-                              bool has_shared_name, bool needs_home_object) {
+                              bool has_shared_name) {
   if (IsClassConstructor(kind)) {
     // Like the strict function map, but with no 'name' accessor. 'name'
     // needs to be the last property and it is added during instantiation,
@@ -192,37 +194,27 @@ int Context::FunctionMapIndex(LanguageMode language_mode, FunctionKind kind,
 
   int base = 0;
   if (IsGeneratorFunction(kind)) {
-    CHECK_FOLLOWS4(GENERATOR_FUNCTION_MAP_INDEX,
-                   GENERATOR_FUNCTION_WITH_NAME_MAP_INDEX,
-                   GENERATOR_FUNCTION_WITH_HOME_OBJECT_MAP_INDEX,
-                   GENERATOR_FUNCTION_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX);
-    CHECK_FOLLOWS4(
-        ASYNC_GENERATOR_FUNCTION_MAP_INDEX,
-        ASYNC_GENERATOR_FUNCTION_WITH_NAME_MAP_INDEX,
-        ASYNC_GENERATOR_FUNCTION_WITH_HOME_OBJECT_MAP_INDEX,
-        ASYNC_GENERATOR_FUNCTION_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX);
+    CHECK_FOLLOWS2(GENERATOR_FUNCTION_MAP_INDEX,
+                   GENERATOR_FUNCTION_WITH_NAME_MAP_INDEX);
+    CHECK_FOLLOWS2(ASYNC_GENERATOR_FUNCTION_MAP_INDEX,
+                   ASYNC_GENERATOR_FUNCTION_WITH_NAME_MAP_INDEX);
 
     base = IsAsyncFunction(kind) ? ASYNC_GENERATOR_FUNCTION_MAP_INDEX
                                  : GENERATOR_FUNCTION_MAP_INDEX;
 
   } else if (IsAsyncFunction(kind) || IsAsyncModule(kind)) {
-    CHECK_FOLLOWS4(ASYNC_FUNCTION_MAP_INDEX, ASYNC_FUNCTION_WITH_NAME_MAP_INDEX,
-                   ASYNC_FUNCTION_WITH_HOME_OBJECT_MAP_INDEX,
-                   ASYNC_FUNCTION_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX);
+    CHECK_FOLLOWS2(ASYNC_FUNCTION_MAP_INDEX,
+                   ASYNC_FUNCTION_WITH_NAME_MAP_INDEX);
 
     base = ASYNC_FUNCTION_MAP_INDEX;
 
   } else if (IsStrictFunctionWithoutPrototype(kind)) {
-    DCHECK_IMPLIES(IsArrowFunction(kind), !needs_home_object);
-    CHECK_FOLLOWS4(STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX,
-                   METHOD_WITH_NAME_MAP_INDEX,
-                   METHOD_WITH_HOME_OBJECT_MAP_INDEX,
-                   METHOD_WITH_NAME_AND_HOME_OBJECT_MAP_INDEX);
+    CHECK_FOLLOWS2(STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX,
+                   METHOD_WITH_NAME_MAP_INDEX);
 
     base = STRICT_FUNCTION_WITHOUT_PROTOTYPE_MAP_INDEX;
 
   } else {
-    DCHECK(!needs_home_object);
     CHECK_FOLLOWS2(SLOPPY_FUNCTION_MAP_INDEX,
                    SLOPPY_FUNCTION_WITH_NAME_MAP_INDEX);
     CHECK_FOLLOWS2(STRICT_FUNCTION_MAP_INDEX,
@@ -231,9 +223,8 @@ int Context::FunctionMapIndex(LanguageMode language_mode, FunctionKind kind,
     base = is_strict(language_mode) ? STRICT_FUNCTION_MAP_INDEX
                                     : SLOPPY_FUNCTION_MAP_INDEX;
   }
-  int offset = static_cast<int>(!has_shared_name) |
-               (static_cast<int>(needs_home_object) << 1);
-  DCHECK_EQ(0, offset & ~3);
+  int offset = static_cast<int>(!has_shared_name);
+  DCHECK_EQ(0, offset & ~1);
 
   return base + offset;
 }
@@ -252,7 +243,7 @@ Map Context::GetInitialJSArrayMap(ElementsKind kind) const {
 
 DEF_GETTER(NativeContext, microtask_queue, MicrotaskQueue*) {
   return reinterpret_cast<MicrotaskQueue*>(ReadExternalPointerField(
-      kMicrotaskQueueOffset, isolate, kNativeContextMicrotaskQueueTag));
+      kMicrotaskQueueOffset, cage_base, kNativeContextMicrotaskQueueTag));
 }
 
 void NativeContext::AllocateExternalPointerEntries(Isolate* isolate) {

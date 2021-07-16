@@ -28,10 +28,10 @@ class ClassLiteral;
 class ObjectBoilerplateDescription : public FixedArray {
  public:
   inline Object name(int index) const;
-  inline Object name(IsolateRoot isolate, int index) const;
+  inline Object name(PtrComprCageBase cage_base, int index) const;
 
   inline Object value(int index) const;
-  inline Object value(IsolateRoot isolate, int index) const;
+  inline Object value(PtrComprCageBase cage_base, int index) const;
 
   inline void set_key_value(int index, Object key, Object value);
 
@@ -73,6 +73,18 @@ class ArrayBoilerplateDescription
 
  private:
   TQ_OBJECT_CONSTRUCTORS(ArrayBoilerplateDescription)
+};
+
+class RegExpBoilerplateDescription
+    : public TorqueGeneratedRegExpBoilerplateDescription<
+          RegExpBoilerplateDescription, Struct> {
+ public:
+  // Dispatched behavior.
+  DECL_PRINTER(RegExpBoilerplateDescription)
+  void BriefPrintDetails(std::ostream& os);
+
+ private:
+  TQ_OBJECT_CONSTRUCTORS(RegExpBoilerplateDescription)
 };
 
 class ClassBoilerplate : public FixedArray {

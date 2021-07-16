@@ -25,10 +25,7 @@ Module._findPath = (request, paths, isMain) => {
   if (!r && hacks.includes(request)) {
     try {
       return require.resolve(`./tools/node_modules/${request}`);
-    // Keep the variable in place to ensure that ESLint started by older Node.js
-    // versions work as expected.
-    // eslint-disable-next-line no-unused-vars
-    } catch (e) {
+    } catch {
       return require.resolve(
         `./tools/node_modules/eslint/node_modules/${request}`);
     }
@@ -79,6 +76,37 @@ module.exports = {
         'doc/api/packages.md/*.js',
       ],
       parserOptions: { sourceType: 'module' },
+      rules: { 'no-restricted-globals': [
+        'error',
+        {
+          name: '__filename',
+          message: 'Use import.meta.url instead',
+        },
+        {
+          name: '__dirname',
+          message: 'Not available in ESM',
+        },
+        {
+          name: 'exports',
+          message: 'Not available in ESM',
+        },
+        {
+          name: 'module',
+          message: 'Not available in ESM',
+        },
+        {
+          name: 'require',
+          message: 'Use import instead',
+        },
+        {
+          name: 'Buffer',
+          message: 'Import Buffer instead of using the global'
+        },
+        {
+          name: 'process',
+          message: 'Import process instead of using the global'
+        },
+      ] },
     },
   ],
   rules: {
@@ -141,6 +169,7 @@ module.exports = {
       code: 80,
       ignorePattern: '^// Flags:',
       ignoreRegExpLiterals: true,
+      ignoreTemplateLiterals: true,
       ignoreUrls: true,
       tabWidth: 2,
     }],
@@ -307,7 +336,7 @@ module.exports = {
     'template-curly-spacing': 'error',
     'unicode-bom': 'error',
     'use-isnan': 'error',
-    'valid-typeof': 'error',
+    'valid-typeof': ['error', { requireStringLiterals: true }],
 
     // Custom rules from eslint-plugin-node-core
     'node-core/no-unescaped-regexp-dot': 'error',
@@ -315,6 +344,7 @@ module.exports = {
   },
   globals: {
     AbortController: 'readable',
+    AbortSignal: 'readable',
     Atomics: 'readable',
     BigInt: 'readable',
     BigInt64Array: 'readable',
@@ -328,5 +358,8 @@ module.exports = {
     TextDecoder: 'readable',
     queueMicrotask: 'readable',
     globalThis: 'readable',
+    btoa: 'readable',
+    atob: 'readable',
+    performance: 'readable',
   },
 };

@@ -1,5 +1,4 @@
-const { test } = require('tap')
-const requireInject = require('require-inject')
+const t = require('tap')
 
 const mocks = {
   profile: {},
@@ -7,9 +6,11 @@ const mocks = {
   log: {},
   readUserInfo: {},
 }
+const npm = {
+  output: (...args) => mocks.output(...args),
+}
 
-const Token = requireInject('../../lib/token.js', {
-  '../../lib/utils/output.js': (...args) => mocks.output(...args),
+const Token = t.mock('../../lib/token.js', {
   '../../lib/utils/otplease.js': (opts, fn) => {
     return Promise.resolve().then(() => fn(opts))
   },
@@ -17,11 +18,14 @@ const Token = requireInject('../../lib/token.js', {
   'npm-profile': mocks.profile,
   npmlog: mocks.log,
 })
-const token = new Token({})
+
+const token = new Token(npm)
 
 const tokenWithMocks = (mockRequests) => {
   for (const mod in mockRequests) {
-    if (mod !== 'npm') {
+    if (mod === 'npm')
+      mockRequests.npm = { ...npm, ...mockRequests.npm }
+    else {
       if (typeof mockRequests[mod] === 'function')
         mocks[mod] = mockRequests[mod]
       else {
@@ -44,11 +48,11 @@ const tokenWithMocks = (mockRequests) => {
     }
   }
 
-  const token = new Token(mockRequests.npm || {})
+  const token = new Token(mockRequests.npm || npm)
   return [token, reset]
 }
 
-test('completion', (t) => {
+t.test('completion', (t) => {
   t.plan(5)
 
   const testComp = (argv, expect) => {
@@ -66,7 +70,7 @@ test('completion', (t) => {
   )
 })
 
-test('token foobar', (t) => {
+t.test('token foobar', (t) => {
   t.plan(2)
 
   const [, reset] = tokenWithMocks({
@@ -79,14 +83,14 @@ test('token foobar', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['foobar'], (err) => {
     t.match(err.message, 'foobar is not a recognized subcommand')
   })
 })
 
-test('token list', (t) => {
+t.test('token list', (t) => {
   t.plan(15)
 
   const now = new Date().toISOString()
@@ -147,14 +151,14 @@ test('token list', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec([], (err) => {
-    t.ifError(err, 'npm token list')
+    t.error(err, 'npm token list')
   })
 })
 
-test('token list json output', (t) => {
+t.test('token list json output', (t) => {
   t.plan(8)
 
   const now = new Date().toISOString()
@@ -201,14 +205,14 @@ test('token list json output', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['list'], (err) => {
-    t.ifError(err, 'npm token list')
+    t.error(err, 'npm token list')
   })
 })
 
-test('token list parseable output', (t) => {
+t.test('token list parseable output', (t) => {
   t.plan(12)
 
   const now = new Date().toISOString()
@@ -269,14 +273,14 @@ test('token list parseable output', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['list'], (err) => {
-    t.ifError(err, 'npm token list')
+    t.error(err, 'npm token list')
   })
 })
 
-test('token revoke', (t) => {
+t.test('token revoke', (t) => {
   t.plan(10)
 
   const [token, reset] = tokenWithMocks({
@@ -322,14 +326,14 @@ test('token revoke', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['rm', 'abcd'], (err) => {
-    t.ifError(err, 'npm token rm')
+    t.error(err, 'npm token rm')
   })
 })
 
-test('token revoke multiple tokens', (t) => {
+t.test('token revoke multiple tokens', (t) => {
   t.plan(10)
 
   const [token, reset] = tokenWithMocks({
@@ -374,14 +378,14 @@ test('token revoke multiple tokens', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['revoke', 'abcd', 'efgh'], (err) => {
-    t.ifError(err, 'npm token rm')
+    t.error(err, 'npm token rm')
   })
 })
 
-test('token revoke json output', (t) => {
+t.test('token revoke json output', (t) => {
   t.plan(10)
 
   const [token, reset] = tokenWithMocks({
@@ -426,14 +430,14 @@ test('token revoke json output', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['delete', 'abcd'], (err) => {
-    t.ifError(err, 'npm token rm')
+    t.error(err, 'npm token rm')
   })
 })
 
-test('token revoke parseable output', (t) => {
+t.test('token revoke parseable output', (t) => {
   t.plan(9)
 
   const [token, reset] = tokenWithMocks({
@@ -476,14 +480,14 @@ test('token revoke parseable output', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['remove', 'abcd'], (err) => {
-    t.ifError(err, 'npm token rm')
+    t.error(err, 'npm token rm')
   })
 })
 
-test('token revoke by token', (t) => {
+t.test('token revoke by token', (t) => {
   t.plan(9)
 
   const [token, reset] = tokenWithMocks({
@@ -526,14 +530,14 @@ test('token revoke by token', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['rm', 'efgh5678'], (err) => {
-    t.ifError(err, 'npm token rm')
+    t.error(err, 'npm token rm')
   })
 })
 
-test('token revoke requires an id', (t) => {
+t.test('token revoke requires an id', (t) => {
   t.plan(2)
 
   const [token, reset] = tokenWithMocks({
@@ -546,14 +550,14 @@ test('token revoke requires an id', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['rm'], (err) => {
     t.match(err.message, '`<tokenKey>` argument is required')
   })
 })
 
-test('token revoke ambiguous id errors', (t) => {
+t.test('token revoke ambiguous id errors', (t) => {
   t.plan(7)
 
   const [token, reset] = tokenWithMocks({
@@ -591,14 +595,14 @@ test('token revoke ambiguous id errors', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['rm', 'abcd'], (err) => {
     t.match(err.message, 'Token ID "abcd" was ambiguous')
   })
 })
 
-test('token revoke unknown id errors', (t) => {
+t.test('token revoke unknown id errors', (t) => {
   t.plan(7)
 
   const [token, reset] = tokenWithMocks({
@@ -635,14 +639,14 @@ test('token revoke unknown id errors', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['rm', 'efgh'], (err) => {
     t.match(err.message, 'Unknown token id or value "efgh".')
   })
 })
 
-test('token create', (t) => {
+t.test('token create', (t) => {
   t.plan(15)
 
   const now = new Date().toISOString()
@@ -699,14 +703,14 @@ test('token create', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['create'], (err) => {
-    t.ifError(err, 'npm token create')
+    t.error(err, 'npm token create')
   })
 })
 
-test('token create json output', (t) => {
+t.test('token create json output', (t) => {
   t.plan(10)
 
   const now = new Date().toISOString()
@@ -758,14 +762,14 @@ test('token create json output', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['create'], (err) => {
-    t.ifError(err, 'npm token create')
+    t.error(err, 'npm token create')
   })
 })
 
-test('token create parseable output', (t) => {
+t.test('token create parseable output', (t) => {
   t.plan(12)
 
   const now = new Date().toISOString()
@@ -824,14 +828,14 @@ test('token create parseable output', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['create'], (err) => {
-    t.ifError(err, 'npm token create')
+    t.error(err, 'npm token create')
   })
 })
 
-test('token create ipv6 cidr', (t) => {
+t.test('token create ipv6 cidr', (t) => {
   t.plan(4)
 
   const password = 'thisisnotreallyapassword'
@@ -858,7 +862,7 @@ test('token create ipv6 cidr', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['create'], (err) => {
     t.equal(err.message, 'CIDR whitelist can only contain IPv4 addresses, ::1/128 is IPv6', 'returns correct error')
@@ -866,7 +870,7 @@ test('token create ipv6 cidr', (t) => {
   })
 })
 
-test('token create invalid cidr', (t) => {
+t.test('token create invalid cidr', (t) => {
   t.plan(4)
 
   const password = 'thisisnotreallyapassword'
@@ -893,7 +897,7 @@ test('token create invalid cidr', (t) => {
     },
   })
 
-  t.tearDown(reset)
+  t.teardown(reset)
 
   token.exec(['create'], (err) => {
     t.equal(err.message, 'CIDR whitelist contains invalid CIDR entry: apple/cider', 'returns correct error')

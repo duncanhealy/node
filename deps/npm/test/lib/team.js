@@ -1,5 +1,4 @@
 const t = require('tap')
-const requireInject = require('require-inject')
 
 let result = ''
 const libnpmteam = {
@@ -10,24 +9,25 @@ const libnpmteam = {
   async lsUsers () {},
   async rm () {},
 }
-const npm = { flatOptions: {} }
+const npm = {
+  flatOptions: {},
+  output: (...msg) => {
+    result += msg.join('\n')
+  },
+}
 const mocks = {
   libnpmteam,
   'cli-columns': a => a.join(' '),
-  '../../lib/utils/output.js': (...msg) => {
-    result += msg.join('\n')
-  },
   '../../lib/utils/otplease.js': async (opts, fn) => fn(opts),
   '../../lib/utils/usage.js': () => 'usage instructions',
 }
 
-t.afterEach(cb => {
+t.afterEach(() => {
   result = ''
   npm.flatOptions = {}
-  cb()
 })
 
-const Team = requireInject('../../lib/team.js', mocks)
+const Team = t.mock('../../lib/team.js', mocks)
 const team = new Team(npm)
 
 t.test('no args', t => {
@@ -74,7 +74,7 @@ t.test('team add <scope:team> <user>', t => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         {
           added: true,
@@ -94,7 +94,7 @@ t.test('team add <scope:team> <user>', t => {
       if (err)
         throw err
 
-      t.deepEqual(result, '', 'should not output success if silent')
+      t.same(result, '', 'should not output success if silent')
       t.end()
     })
   })
@@ -135,7 +135,7 @@ t.test('team create <scope:team>', t => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         {
           created: true,
@@ -154,7 +154,7 @@ t.test('team create <scope:team>', t => {
       if (err)
         throw err
 
-      t.deepEqual(result, '', 'should not output create success if silent')
+      t.same(result, '', 'should not output create success if silent')
       t.end()
     })
   })
@@ -192,7 +192,7 @@ t.test('team destroy <scope:team>', t => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         {
           deleted: true,
@@ -211,7 +211,7 @@ t.test('team destroy <scope:team>', t => {
       if (err)
         throw err
 
-      t.deepEqual(result, '', 'should not output destroy if silent')
+      t.same(result, '', 'should not output destroy if silent')
       t.end()
     })
   })
@@ -230,7 +230,7 @@ t.test('team ls <scope>', t => {
     },
   }
 
-  const Team = requireInject('../../lib/team.js', {
+  const Team = t.mock('../../lib/team.js', {
     ...mocks,
     libnpmteam,
   })
@@ -265,7 +265,7 @@ t.test('team ls <scope>', t => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         [
           'npmcli:designers',
@@ -285,7 +285,7 @@ t.test('team ls <scope>', t => {
       if (err)
         throw err
 
-      t.deepEqual(result, '', 'should not list teams if silent')
+      t.same(result, '', 'should not list teams if silent')
       t.end()
     })
   })
@@ -297,7 +297,7 @@ t.test('team ls <scope>', t => {
       },
     }
 
-    const Team = requireInject('../../lib/team.js', {
+    const Team = t.mock('../../lib/team.js', {
       ...mocks,
       libnpmteam,
     })
@@ -319,7 +319,7 @@ t.test('team ls <scope>', t => {
       },
     }
 
-    const Team = requireInject('../../lib/team.js', {
+    const Team = t.mock('../../lib/team.js', {
       ...mocks,
       libnpmteam,
     })
@@ -343,7 +343,7 @@ t.test('team ls <scope:team>', t => {
       return ['nlf', 'ruyadorno', 'darcyclarke', 'isaacs']
     },
   }
-  const Team = requireInject('../../lib/team.js', {
+  const Team = t.mock('../../lib/team.js', {
     ...mocks,
     libnpmteam,
   })
@@ -378,7 +378,7 @@ t.test('team ls <scope:team>', t => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         [
           'darcyclarke',
@@ -399,7 +399,7 @@ t.test('team ls <scope:team>', t => {
       if (err)
         throw err
 
-      t.deepEqual(result, '', 'should not output users if silent')
+      t.same(result, '', 'should not output users if silent')
       t.end()
     })
   })
@@ -411,7 +411,7 @@ t.test('team ls <scope:team>', t => {
       },
     }
 
-    const Team = requireInject('../../lib/team.js', {
+    const Team = t.mock('../../lib/team.js', {
       ...mocks,
       libnpmteam,
     })
@@ -433,7 +433,7 @@ t.test('team ls <scope:team>', t => {
       },
     }
 
-    const Team = requireInject('../../lib/team.js', {
+    const Team = t.mock('../../lib/team.js', {
       ...mocks,
       libnpmteam,
     })
@@ -481,7 +481,7 @@ t.test('team rm <scope:team> <user>', t => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         {
           removed: true,
@@ -501,7 +501,7 @@ t.test('team rm <scope:team> <user>', t => {
       if (err)
         throw err
 
-      t.deepEqual(result, '', 'should not output rm result if silent')
+      t.same(result, '', 'should not output rm result if silent')
       t.end()
     })
   })

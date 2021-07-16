@@ -1,27 +1,37 @@
 const cacache = require('cacache')
 const { promisify } = require('util')
 const log = require('npmlog')
-const output = require('./utils/output.js')
 const pacote = require('pacote')
 const path = require('path')
 const rimraf = promisify(require('rimraf'))
+const BaseCommand = require('./base-command.js')
 
-const usageUtil = require('./utils/usage.js')
-class Cache {
-  constructor (npm) {
-    this.npm = npm
+class Cache extends BaseCommand {
+  static get description () {
+    return 'Manipulates packages cache'
   }
 
-  get usage () {
-    return usageUtil('cache',
-      'npm cache add <tarball file>' +
-      '\nnpm cache add <folder>' +
-      '\nnpm cache add <tarball url>' +
-      '\nnpm cache add <git url>' +
-      '\nnpm cache add <name>@<version>' +
-      '\nnpm cache clean' +
-      '\nnpm cache verify'
-    )
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get name () {
+    return 'cache'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return ['cache']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return [
+      'add <tarball file>',
+      'add <folder>',
+      'add <tarball url>',
+      'add <git url>',
+      'add <name>@<version>',
+      'clean',
+      'verify',
+    ]
   }
 
   async completion (opts) {
@@ -62,7 +72,7 @@ class Cache {
       throw new Error('npm cache clear does not accept arguments')
 
     const cachePath = path.join(this.npm.cache, '_cacache')
-    if (!this.npm.flatOptions.force) {
+    if (!this.npm.config.get('force')) {
       throw new Error(`As of npm@5, the npm cache self-heals from corruption issues
 by treating integrity mismatches as cache misses.  As a result,
 data extracted from the cache is guaranteed to be valid.  If you
@@ -81,33 +91,30 @@ with --force.`)
     return rimraf(cachePath)
   }
 
-  // npm cache add <tarball-url>
-  // npm cache add <pkg> <ver>
-  // npm cache add <tarball>
-  // npm cache add <folder>
+  // npm cache add <tarball-url>...
+  // npm cache add <pkg> <ver>...
+  // npm cache add <tarball>...
+  // npm cache add <folder>...
   async add (args) {
     const usage = 'Usage:\n' +
-      '    npm cache add <tarball-url>\n' +
-      '    npm cache add <pkg>@<ver>\n' +
-      '    npm cache add <tarball>\n' +
-      '    npm cache add <folder>\n'
+      '    npm cache add <tarball-url>...\n' +
+      '    npm cache add <pkg>@<ver>...\n' +
+      '    npm cache add <tarball>...\n' +
+      '    npm cache add <folder>...\n'
     log.silly('cache add', 'args', args)
-    const spec = args[0] && args[0] +
-      (args[1] === undefined || args[1] === null ? '' : `@${args[1]}`)
-
-    if (!spec)
+    if (args.length === 0)
       throw Object.assign(new Error(usage), { code: 'EUSAGE' })
 
-    log.silly('cache add', 'spec', spec)
-    const opts = { ...this.npm.flatOptions }
-
-    // we ask pacote for the thing, and then just throw the data
-    // away so that it tee-pipes it into the cache like it does
-    // for a normal request.
-    await pacote.tarball.stream(spec, stream => {
-      stream.resume()
-      return stream.promise()
-    }, opts)
+    return Promise.all(args.map(spec => {
+      log.silly('cache add', 'spec', spec)
+      // we ask pacote for the thing, and then just throw the data
+      // away so that it tee-pipes it into the cache like it does
+      // for a normal request.
+      return pacote.tarball.stream(spec, stream => {
+        stream.resume()
+        return stream.promise()
+      }, this.npm.flatOptions)
+    }))
   }
 
   async verify () {
@@ -116,13 +123,13 @@ with --force.`)
       ? `~${cache.substr(process.env.HOME.length)}`
       : cache
     const stats = await cacache.verify(cache)
-    output(`Cache verified and compressed (${prefix})`)
-    output(`Content verified: ${stats.verifiedContent} (${stats.keptSize} bytes)`)
-    stats.badContentCount && output(`Corrupted content removed: ${stats.badContentCount}`)
-    stats.reclaimedCount && output(`Content garbage-collected: ${stats.reclaimedCount} (${stats.reclaimedSize} bytes)`)
-    stats.missingContent && output(`Missing content: ${stats.missingContent}`)
-    output(`Index entries: ${stats.totalEntries}`)
-    output(`Finished in ${stats.runTime.total / 1000}s`)
+    this.npm.output(`Cache verified and compressed (${prefix})`)
+    this.npm.output(`Content verified: ${stats.verifiedContent} (${stats.keptSize} bytes)`)
+    stats.badContentCount && this.npm.output(`Corrupted content removed: ${stats.badContentCount}`)
+    stats.reclaimedCount && this.npm.output(`Content garbage-collected: ${stats.reclaimedCount} (${stats.reclaimedSize} bytes)`)
+    stats.missingContent && this.npm.output(`Missing content: ${stats.missingContent}`)
+    this.npm.output(`Index entries: ${stats.totalEntries}`)
+    this.npm.output(`Finished in ${stats.runTime.total / 1000}s`)
   }
 }
 

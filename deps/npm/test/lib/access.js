@@ -1,9 +1,12 @@
-const { test } = require('tap')
-const requireInject = require('require-inject')
+const t = require('tap')
 
 const Access = require('../../lib/access.js')
 
-test('completion', t => {
+const npm = {
+  output: () => null,
+}
+
+t.test('completion', t => {
   const access = new Access({ flatOptions: {} })
   const testComp = (argv, expect) => {
     const res = access.completion({conf: {argv: {remain: argv}}})
@@ -34,15 +37,15 @@ test('completion', t => {
   t.end()
 })
 
-test('subcommand required', t => {
+t.test('subcommand required', t => {
   const access = new Access({ flatOptions: {} })
   access.exec([], (err) => {
-    t.equal(err, '\nUsage: Subcommand is required.\n\n' + access.usage)
+    t.match(err, access.usageError('Subcommand is required.'))
     t.end()
   })
 })
 
-test('unrecognized subcommand', (t) => {
+t.test('unrecognized subcommand', (t) => {
   const access = new Access({ flatOptions: {} })
   access.exec(['blerg'], (err) => {
     t.match(
@@ -54,7 +57,7 @@ test('unrecognized subcommand', (t) => {
   })
 })
 
-test('edit', (t) => {
+t.test('edit', (t) => {
   const access = new Access({ flatOptions: {} })
   access.exec([
     'edit',
@@ -69,7 +72,7 @@ test('edit', (t) => {
   })
 })
 
-test('access public on unscoped package', (t) => {
+t.test('access public on unscoped package', (t) => {
   const prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'npm-access-public-pkg',
@@ -88,13 +91,13 @@ test('access public on unscoped package', (t) => {
   })
 })
 
-test('access public on scoped package', (t) => {
+t.test('access public on scoped package', (t) => {
   t.plan(4)
   const name = '@scoped/npm-access-public-pkg'
   const prefix = t.testdir({
     'package.json': JSON.stringify({ name }),
   })
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       public: (pkg, { registry }) => {
         t.equal(pkg, name, 'should use pkg name ref')
@@ -114,12 +117,12 @@ test('access public on scoped package', (t) => {
   access.exec([
     'public',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access public on scoped package')
   })
 })
 
-test('access public on missing package.json', (t) => {
+t.test('access public on missing package.json', (t) => {
   const prefix = t.testdir({
     node_modules: {},
   })
@@ -136,7 +139,7 @@ test('access public on missing package.json', (t) => {
   })
 })
 
-test('access public on invalid package.json', (t) => {
+t.test('access public on invalid package.json', (t) => {
   const prefix = t.testdir({
     'package.json': '{\n',
     node_modules: {},
@@ -154,7 +157,7 @@ test('access public on invalid package.json', (t) => {
   })
 })
 
-test('access restricted on unscoped package', (t) => {
+t.test('access restricted on unscoped package', (t) => {
   const prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'npm-access-restricted-pkg',
@@ -173,13 +176,13 @@ test('access restricted on unscoped package', (t) => {
   })
 })
 
-test('access restricted on scoped package', (t) => {
+t.test('access restricted on scoped package', (t) => {
   t.plan(4)
   const name = '@scoped/npm-access-restricted-pkg'
   const prefix = t.testdir({
     'package.json': JSON.stringify({ name }),
   })
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       restricted: (pkg, { registry }) => {
         t.equal(pkg, name, 'should use pkg name ref')
@@ -199,12 +202,12 @@ test('access restricted on scoped package', (t) => {
   access.exec([
     'restricted',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access restricted on scoped package')
   })
 })
 
-test('access restricted on missing package.json', (t) => {
+t.test('access restricted on missing package.json', (t) => {
   const prefix = t.testdir({
     node_modules: {},
   })
@@ -221,7 +224,7 @@ test('access restricted on missing package.json', (t) => {
   })
 })
 
-test('access restricted on invalid package.json', (t) => {
+t.test('access restricted on invalid package.json', (t) => {
   const prefix = t.testdir({
     'package.json': '{\n',
     node_modules: {},
@@ -239,9 +242,9 @@ test('access restricted on invalid package.json', (t) => {
   })
 })
 
-test('access grant read-only', (t) => {
+t.test('access grant read-only', (t) => {
   t.plan(5)
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       grant: (spec, team, permissions) => {
         t.equal(spec, '@scoped/another', 'should use expected spec')
@@ -258,14 +261,14 @@ test('access grant read-only', (t) => {
     'myorg:myteam',
     '@scoped/another',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access grant read-only')
   })
 })
 
-test('access grant read-write', (t) => {
+t.test('access grant read-write', (t) => {
   t.plan(5)
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       grant: (spec, team, permissions) => {
         t.equal(spec, '@scoped/another', 'should use expected spec')
@@ -282,19 +285,19 @@ test('access grant read-write', (t) => {
     'myorg:myteam',
     '@scoped/another',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access grant read-write')
   })
 })
 
-test('access grant current cwd', (t) => {
+t.test('access grant current cwd', (t) => {
   t.plan(5)
   const prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'yargs',
     }),
   })
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       grant: (spec, team, permissions) => {
         t.equal(spec, 'yargs', 'should use expected spec')
@@ -310,12 +313,12 @@ test('access grant current cwd', (t) => {
     'read-write',
     'myorg:myteam',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access grant current cwd')
   })
 })
 
-test('access grant others', (t) => {
+t.test('access grant others', (t) => {
   const access = new Access({ flatOptions: {} })
   access.exec([
     'grant',
@@ -332,7 +335,7 @@ test('access grant others', (t) => {
   })
 })
 
-test('access grant missing team args', (t) => {
+t.test('access grant missing team args', (t) => {
   const access = new Access({ flatOptions: {} })
   access.exec([
     'grant',
@@ -349,7 +352,7 @@ test('access grant missing team args', (t) => {
   })
 })
 
-test('access grant malformed team arg', (t) => {
+t.test('access grant malformed team arg', (t) => {
   const access = new Access({ flatOptions: {} })
   access.exec([
     'grant',
@@ -366,9 +369,9 @@ test('access grant malformed team arg', (t) => {
   })
 })
 
-test('access 2fa-required/2fa-not-required', t => {
+t.test('access 2fa-required/2fa-not-required', t => {
   t.plan(2)
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       tfaRequired: (spec) => {
         t.equal(spec, '@scope/pkg', 'should use expected spec')
@@ -393,9 +396,9 @@ test('access 2fa-required/2fa-not-required', t => {
   })
 })
 
-test('access revoke', (t) => {
+t.test('access revoke', (t) => {
   t.plan(4)
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       revoke: (spec, team) => {
         t.equal(spec, '@scoped/another', 'should use expected spec')
@@ -410,12 +413,12 @@ test('access revoke', (t) => {
     'myorg:myteam',
     '@scoped/another',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access revoke')
   })
 })
 
-test('access revoke missing team args', (t) => {
+t.test('access revoke missing team args', (t) => {
   const access = new Access({ flatOptions: {} })
   access.exec([
     'revoke',
@@ -431,7 +434,7 @@ test('access revoke missing team args', (t) => {
   })
 })
 
-test('access revoke malformed team arg', (t) => {
+t.test('access revoke malformed team arg', (t) => {
   const access = new Access({ flatOptions: {} })
   access.exec([
     'revoke',
@@ -447,9 +450,9 @@ test('access revoke malformed team arg', (t) => {
   })
 })
 
-test('npm access ls-packages with no team', (t) => {
+t.test('npm access ls-packages with no team', (t) => {
   t.plan(3)
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       lsPackages: (entity) => {
         t.equal(entity, 'foo', 'should use expected entity')
@@ -457,80 +460,76 @@ test('npm access ls-packages with no team', (t) => {
       },
     },
     '../../lib/utils/get-identity.js': () => Promise.resolve('foo'),
-    '../../lib/utils/output.js': () => null,
   })
-  const access = new Access({})
+  const access = new Access(npm)
   access.exec([
     'ls-packages',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access ls-packages with no team')
   })
 })
 
-test('access ls-packages on team', (t) => {
+t.test('access ls-packages on team', (t) => {
   t.plan(3)
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       lsPackages: (entity) => {
         t.equal(entity, 'myorg:myteam', 'should use expected entity')
         return {}
       },
     },
-    '../../lib/utils/output.js': () => null,
   })
-  const access = new Access({})
+  const access = new Access(npm)
   access.exec([
     'ls-packages',
     'myorg:myteam',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access ls-packages on team')
   })
 })
 
-test('access ls-collaborators on current', (t) => {
+t.test('access ls-collaborators on current', (t) => {
   t.plan(3)
   const prefix = t.testdir({
     'package.json': JSON.stringify({
       name: 'yargs',
     }),
   })
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       lsCollaborators: (spec) => {
         t.equal(spec, 'yargs', 'should use expected spec')
         return {}
       },
     },
-    '../../lib/utils/output.js': () => null,
   })
-  const access = new Access({ prefix })
+  const access = new Access({ prefix, ...npm })
   access.exec([
     'ls-collaborators',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access ls-collaborators on current')
   })
 })
 
-test('access ls-collaborators on spec', (t) => {
+t.test('access ls-collaborators on spec', (t) => {
   t.plan(3)
-  const Access = requireInject('../../lib/access.js', {
+  const Access = t.mock('../../lib/access.js', {
     libnpmaccess: {
       lsCollaborators: (spec) => {
         t.equal(spec, 'yargs', 'should use expected spec')
         return {}
       },
     },
-    '../../lib/utils/output.js': () => null,
   })
-  const access = new Access({})
+  const access = new Access(npm)
   access.exec([
     'ls-collaborators',
     'yargs',
   ], (err) => {
-    t.ifError(err, 'npm access')
+    t.error(err, 'npm access')
     t.ok('should successfully access ls-packages with no team')
   })
 })

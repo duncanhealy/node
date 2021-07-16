@@ -2,21 +2,30 @@ const fetch = require('npm-registry-fetch')
 const log = require('npmlog')
 const npa = require('npm-package-arg')
 
-const output = require('./utils/output.js')
-const usageUtil = require('./utils/usage.js')
 const getIdentity = require('./utils/get-identity')
 
-class Star {
-  constructor (npm) {
-    this.npm = npm
+const BaseCommand = require('./base-command.js')
+class Star extends BaseCommand {
+  static get description () {
+    return 'Mark your favorite packages'
   }
 
-  get usage () {
-    return usageUtil(
-      'star',
-      'npm star [<pkg>...]\n' +
-      'npm unstar [<pkg>...]'
-    )
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get name () {
+    return 'star'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['[<pkg>...]']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'registry',
+      'unicode',
+    ]
   }
 
   exec (args, cb) {
@@ -29,7 +38,7 @@ class Star {
 
     // if we're unstarring, then show an empty star image
     // otherwise, show the full star image
-    const { unicode } = this.npm.flatOptions
+    const unicode = this.npm.config.get('unicode')
     const unstar = this.npm.config.get('star.unstar')
     const full = unicode ? '\u2605 ' : '(*)'
     const empty = unicode ? '\u2606 ' : '( )'
@@ -73,7 +82,7 @@ class Star {
         body,
       })
 
-      output(show + ' ' + pkg.name)
+      this.npm.output(show + ' ' + pkg.name)
       log.verbose('star', data)
       return data
     }

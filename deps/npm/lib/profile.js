@@ -7,10 +7,8 @@ const qrcodeTerminal = require('qrcode-terminal')
 const Table = require('cli-table3')
 
 const otplease = require('./utils/otplease.js')
-const output = require('./utils/output.js')
 const pulseTillDone = require('./utils/pulse-till-done.js')
 const readUserInfo = require('./utils/read-user-info.js')
-const usageUtil = require('./utils/usage.js')
 
 const qrcode = url =>
   new Promise((resolve) => qrcodeTerminal.generate(url, resolve))
@@ -38,19 +36,35 @@ const writableProfileKeys = [
   'github',
 ]
 
-class Profile {
-  constructor (npm) {
-    this.npm = npm
+const BaseCommand = require('./base-command.js')
+class Profile extends BaseCommand {
+  static get description () {
+    return 'Change settings on your registry profile'
   }
 
-  get usage () {
-    return usageUtil(
-      'profile',
-      'npm profile enable-2fa [auth-only|auth-and-writes]\n',
-      'npm profile disable-2fa\n',
-      'npm profile get [<key>]\n',
-      'npm profile set <key> <value>'
-    )
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get name () {
+    return 'profile'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return [
+      'enable-2fa [auth-only|auth-and-writes]',
+      'disable-2fa',
+      'get [<key>]',
+      'set <key> <value>',
+    ]
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'registry',
+      'json',
+      'parseable',
+      'otp',
+    ]
   }
 
   async completion (opts) {
@@ -108,15 +122,15 @@ class Profile {
 
   async get (args) {
     const tfa = 'two-factor auth'
-    const conf = { ...this.npm.flatOptions }
-
-    const info = await pulseTillDone.withPromise(npmProfile.get(conf))
+    const info = await pulseTillDone.withPromise(
+      npmProfile.get(this.npm.flatOptions)
+    )
 
     if (!info.cidr_whitelist)
       delete info.cidr_whitelist
 
-    if (conf.json) {
-      output(JSON.stringify(info, null, 2))
+    if (this.npm.config.get('json')) {
+      this.npm.output(JSON.stringify(info, null, 2))
       return
     }
 
@@ -145,27 +159,27 @@ class Profile {
         .filter((arg) => arg.trim() !== '')
         .map((arg) => cleaned[arg])
         .join('\t')
-      output(values)
+      this.npm.output(values)
     } else {
-      if (conf.parseable) {
+      if (this.npm.config.get('parseable')) {
         for (const key of Object.keys(info)) {
           if (key === 'tfa')
-            output(`${key}\t${cleaned[tfa]}`)
+            this.npm.output(`${key}\t${cleaned[tfa]}`)
           else
-            output(`${key}\t${info[key]}`)
+            this.npm.output(`${key}\t${info[key]}`)
         }
       } else {
         const table = new Table()
         for (const key of Object.keys(cleaned))
           table.push({ [ansistyles.bright(key)]: cleaned[key] })
 
-        output(table.toString())
+        this.npm.output(table.toString())
       }
     }
   }
 
   async set (args) {
-    const conf = { ...this.npm.flatOptions }
+    const conf = this.npm.flatOptions
     const prop = (args[0] || '').toLowerCase().trim()
 
     let value = args.length > 1 ? args.slice(1).join(' ') : null
@@ -214,14 +228,14 @@ class Profile {
 
     const result = await otplease(conf, conf => npmProfile.set(newUser, conf))
 
-    if (conf.json)
-      output(JSON.stringify({ [prop]: result[prop] }, null, 2))
-    else if (conf.parseable)
-      output(prop + '\t' + result[prop])
+    if (this.npm.config.get('json'))
+      this.npm.output(JSON.stringify({ [prop]: result[prop] }, null, 2))
+    else if (this.npm.config.get('parseable'))
+      this.npm.output(prop + '\t' + result[prop])
     else if (result[prop] != null)
-      output('Set', prop, 'to', result[prop])
+      this.npm.output('Set', prop, 'to', result[prop])
     else
-      output('Set', prop)
+      this.npm.output('Set', prop)
   }
 
   async enable2fa (args) {
@@ -239,11 +253,10 @@ class Profile {
       )
     }
 
-    const conf = { ...this.npm.flatOptions }
-    if (conf.json || conf.parseable) {
+    if (this.npm.config.get('json') || this.npm.config.get('parseable')) {
       throw new Error(
         'Enabling two-factor authentication is an interactive operation and ' +
-        (conf.json ? 'JSON' : 'parseable') + ' output mode is not available'
+        (this.npm.config.get('json') ? 'JSON' : 'parseable') + ' output mode is not available'
       )
     }
 
@@ -255,7 +268,7 @@ class Profile {
 
     // if they're using legacy auth currently then we have to
     // update them to a bearer token before continuing.
-    const creds = this.npm.config.getCredentialsByURI(conf.registry)
+    const creds = this.npm.config.getCredentialsByURI(this.npm.config.get('registry'))
     const auth = {}
 
     if (creds.token)
@@ -267,32 +280,29 @@ class Profile {
       auth.basic = { username: basic[0], password: basic[1] }
     }
 
-    if (conf.otp)
-      auth.otp = conf.otp
-
     if (!auth.basic && !auth.token) {
       throw new Error(
         'You need to be logged in to registry ' +
-        `${conf.registry} in order to enable 2fa`
+        `${this.npm.config.get('registry')} in order to enable 2fa`
       )
     }
 
     if (auth.basic) {
       log.info('profile', 'Updating authentication to bearer token')
       const result = await npmProfile.createToken(
-        auth.basic.password, false, [], conf
+        auth.basic.password, false, [], this.npm.flatOptions
       )
 
       if (!result.token) {
         throw new Error(
-          `Your registry ${conf.registry} does not seem to ` +
+          `Your registry ${this.npm.config.get('registry')} does not seem to ` +
           'support bearer tokens. Bearer tokens are required for ' +
           'two-factor authentication'
         )
       }
 
       this.npm.config.setCredentialsByURI(
-        conf.registry,
+        this.npm.config.get('registry'),
         { token: result.token }
       )
       await this.npm.config.save('user')
@@ -303,21 +313,21 @@ class Profile {
     info.tfa.password = password
 
     log.info('profile', 'Determine if tfa is pending')
-    const userInfo = await pulseTillDone.withPromise(npmProfile.get(conf))
+    const userInfo = await pulseTillDone.withPromise(
+      npmProfile.get(this.npm.flatOptions)
+    )
 
+    const conf = { ...this.npm.flatOptions }
     if (userInfo && userInfo.tfa && userInfo.tfa.pending) {
       log.info('profile', 'Resetting two-factor authentication')
       await pulseTillDone.withPromise(
         npmProfile.set({ tfa: { password, mode: 'disable' } }, conf)
       )
     } else if (userInfo && userInfo.tfa) {
-      if (conf.otp)
-        conf.otp = conf.otp
-      else {
-        const otp = await readUserInfo.otp(
+      if (!conf.otp) {
+        conf.otp = await readUserInfo.otp(
           'Enter one-time password from your authenticator app: '
         )
-        conf.otp = otp
       }
     }
 
@@ -327,7 +337,7 @@ class Profile {
     )
 
     if (challenge.tfa === null) {
-      output('Two factor authentication mode changed to: ' + mode)
+      this.npm.output('Two factor authentication mode changed to: ' + mode)
       return
     }
 
@@ -344,7 +354,7 @@ class Profile {
     const secret = otpauth.searchParams.get('secret')
     const code = await qrcode(challenge.tfa)
 
-    output(
+    this.npm.output(
       'Scan into your authenticator app:\n' + code + '\n Or enter code:', secret
     )
 
@@ -355,17 +365,17 @@ class Profile {
 
     const result = await npmProfile.set({ tfa: [interactiveOTP] }, conf)
 
-    output(
+    this.npm.output(
       '2FA successfully enabled. Below are your recovery codes, ' +
       'please print these out.'
     )
-    output(
+    this.npm.output(
       'You will need these to recover access to your account ' +
       'if you lose your authentication device.'
     )
 
     for (const tfaCode of result.tfa)
-      output('\t' + tfaCode)
+      this.npm.output('\t' + tfaCode)
   }
 
   async disable2fa (args) {
@@ -373,7 +383,7 @@ class Profile {
     const info = await pulseTillDone.withPromise(npmProfile.get(conf))
 
     if (!info.tfa || info.tfa.pending) {
-      output('Two factor authentication not enabled.')
+      this.npm.output('Two factor authentication not enabled.')
       return
     }
 
@@ -390,12 +400,12 @@ class Profile {
       tfa: { password: password, mode: 'disable' },
     }, conf))
 
-    if (conf.json)
-      output(JSON.stringify({ tfa: false }, null, 2))
-    else if (conf.parseable)
-      output('tfa\tfalse')
+    if (this.npm.config.get('json'))
+      this.npm.output(JSON.stringify({ tfa: false }, null, 2))
+    else if (this.npm.config.get('parseable'))
+      this.npm.output('tfa\tfalse')
     else
-      output('Two factor authentication disabled.')
+      this.npm.output('Two factor authentication disabled.')
   }
 }
 module.exports = Profile

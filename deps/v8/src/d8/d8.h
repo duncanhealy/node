@@ -26,6 +26,8 @@ namespace v8 {
 
 class D8Console;
 
+enum class ModuleType { kJavaScript, kJSON, kInvalid };
+
 namespace internal {
 class CancelableTaskManager;
 }  // namespace internal
@@ -399,6 +401,8 @@ class ShellOptions {
       "fuzzy-module-file-extensions", true};
   DisallowReassignment<bool> enable_system_instrumentation = {
       "enable-system-instrumentation", false};
+  DisallowReassignment<const char*> web_snapshot_config = {
+      "web-snapshot-config", nullptr};
 };
 
 class Shell : public i::AllStatic {
@@ -418,6 +422,7 @@ class Shell : public i::AllStatic {
                             ReportExceptions report_exceptions,
                             ProcessMessageQueue process_message_queue);
   static bool ExecuteModule(Isolate* isolate, const char* file_name);
+  static bool ExecuteWebSnapshot(Isolate* isolate, const char* file_name);
   static void ReportException(Isolate* isolate, Local<Message> message,
                               Local<Value> exception);
   static void ReportException(Isolate* isolate, TryCatch* try_catch);
@@ -468,6 +473,8 @@ class Shell : public i::AllStatic {
                              const PropertyCallbackInfo<void>& info);
 
   static void LogGetAndStop(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static void TestVerifySourcePositions(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
 
   static void AsyncHooksCreateHook(
       const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -475,6 +482,8 @@ class Shell : public i::AllStatic {
       const v8::FunctionCallbackInfo<v8::Value>& args);
   static void AsyncHooksTriggerAsyncId(
       const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  static void SetPromiseHooks(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   static void Print(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void PrintErr(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -485,11 +494,14 @@ class Shell : public i::AllStatic {
   static void Quit(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Version(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void Read(const v8::FunctionCallbackInfo<v8::Value>& args);
+  static char* ReadChars(const char* name, int* size_out);
+  static bool ReadLines(const char* name, std::vector<std::string>& lines);
   static void ReadBuffer(const v8::FunctionCallbackInfo<v8::Value>& args);
   static Local<String> ReadFromStdin(Isolate* isolate);
   static void ReadLine(const v8::FunctionCallbackInfo<v8::Value>& args) {
     args.GetReturnValue().Set(ReadFromStdin(args.GetIsolate()));
   }
+  static void WriteChars(const char* name, uint8_t* buffer, size_t buffer_size);
   static void Load(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void SetTimeout(const v8::FunctionCallbackInfo<v8::Value>& args);
   static void WorkerNew(const v8::FunctionCallbackInfo<v8::Value>& args);
@@ -534,7 +546,7 @@ class Shell : public i::AllStatic {
   static void RemoveDirectory(const v8::FunctionCallbackInfo<v8::Value>& args);
   static MaybeLocal<Promise> HostImportModuleDynamically(
       Local<Context> context, Local<ScriptOrModule> referrer,
-      Local<String> specifier);
+      Local<String> specifier, Local<FixedArray> import_assertions);
   static void ModuleResolutionSuccessCallback(
       const v8::FunctionCallbackInfo<v8::Value>& info);
   static void ModuleResolutionFailureCallback(
@@ -622,6 +634,7 @@ class Shell : public i::AllStatic {
   static Local<ObjectTemplate> CreatePerformanceTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateRealmTemplate(Isolate* isolate);
   static Local<ObjectTemplate> CreateD8Template(Isolate* isolate);
+  static Local<FunctionTemplate> CreateTestFastCApiTemplate(Isolate* isolate);
 
   static MaybeLocal<Context> CreateRealm(
       const v8::FunctionCallbackInfo<v8::Value>& args, int index,
@@ -630,7 +643,11 @@ class Shell : public i::AllStatic {
                            int index);
   static MaybeLocal<Module> FetchModuleTree(v8::Local<v8::Module> origin_module,
                                             v8::Local<v8::Context> context,
-                                            const std::string& file_name);
+                                            const std::string& file_name,
+                                            ModuleType module_type);
+
+  static MaybeLocal<Value> JSONModuleEvaluationSteps(Local<Context> context,
+                                                     Local<Module> module);
 
   template <class T>
   static MaybeLocal<T> CompileString(Isolate* isolate, Local<Context> context,

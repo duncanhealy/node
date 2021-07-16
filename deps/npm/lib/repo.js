@@ -4,20 +4,35 @@ const { URL } = require('url')
 
 const hostedFromMani = require('./utils/hosted-git-info-from-manifest.js')
 const openUrl = require('./utils/open-url.js')
-const usageUtil = require('./utils/usage.js')
 
-class Repo {
-  constructor (npm) {
-    this.npm = npm
+const BaseCommand = require('./base-command.js')
+class Repo extends BaseCommand {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Open package repository page in the browser'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('repo', 'npm repo [<pkgname> [<pkgname> ...]]')
+  static get name () {
+    return 'repo'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return ['browser', 'workspace', 'workspaces']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['[<pkgname> [<pkgname> ...]]']
   }
 
   exec (args, cb) {
     this.repo(args).then(() => cb()).catch(cb)
+  }
+
+  execWorkspaces (args, filters, cb) {
+    this.repoWorkspaces(args, filters).then(() => cb()).catch(cb)
   }
 
   async repo (args) {
@@ -25,6 +40,11 @@ class Repo {
       args = ['.']
 
     await Promise.all(args.map(pkg => this.get(pkg)))
+  }
+
+  async repoWorkspaces (args, filters) {
+    await this.setWorkspaces(filters)
+    return this.repo(this.workspacePaths)
   }
 
   async get (pkg) {

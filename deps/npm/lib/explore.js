@@ -5,17 +5,26 @@ const rpj = require('read-package-json-fast')
 const runScript = require('@npmcli/run-script')
 const { join, resolve, relative } = require('path')
 const completion = require('./utils/completion/installed-shallow.js')
-const output = require('./utils/output.js')
-const usageUtil = require('./utils/usage.js')
+const BaseCommand = require('./base-command.js')
 
-class Explore {
-  constructor (npm) {
-    this.npm = npm
+class Explore extends BaseCommand {
+  static get description () {
+    return 'Browse an installed package'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('explore', 'npm explore <pkg> [ -- <command>]')
+  static get name () {
+    return 'explore'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['<pkg> [ -- <command>]']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return ['shell']
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
@@ -54,7 +63,7 @@ class Explore {
     }
 
     if (!args.length)
-      output(`\nExploring ${path}\nType 'exit' or ^D when finished\n`)
+      this.npm.output(`\nExploring ${path}\nType 'exit' or ^D when finished\n`)
     this.npm.log.disableProgress()
     try {
       return await runScript({

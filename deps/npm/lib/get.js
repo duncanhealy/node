@@ -1,16 +1,19 @@
-const usageUtil = require('./utils/usage.js')
+const BaseCommand = require('./base-command.js')
 
-class Get {
-  constructor (npm) {
-    this.npm = npm
+class Get extends BaseCommand {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Get a value from the npm configuration'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil(
-      'get',
-      'npm get [<key> ...] (See `npm config`)'
-    )
+  static get name () {
+    return 'get'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['[<key> ...] (See `npm config`)']
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */

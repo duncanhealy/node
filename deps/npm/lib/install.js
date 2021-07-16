@@ -3,35 +3,58 @@
 const fs = require('fs')
 const util = require('util')
 const readdir = util.promisify(fs.readdir)
-const usageUtil = require('./utils/usage.js')
 const reifyFinish = require('./utils/reify-finish.js')
 const log = require('npmlog')
 const { resolve, join } = require('path')
 const Arborist = require('@npmcli/arborist')
 const runScript = require('@npmcli/run-script')
 
-class Install {
-  constructor (npm) {
-    this.npm = npm
+const ArboristWorkspaceCmd = require('./workspaces/arborist-cmd.js')
+class Install extends ArboristWorkspaceCmd {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Install a package'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil(
-      'install',
-      'npm install (with no args, in package dir)' +
-      '\nnpm install [<@scope>/]<pkg>' +
-      '\nnpm install [<@scope>/]<pkg>@<tag>' +
-      '\nnpm install [<@scope>/]<pkg>@<version>' +
-      '\nnpm install [<@scope>/]<pkg>@<version range>' +
-      '\nnpm install <alias>@npm:<name>' +
-      '\nnpm install <folder>' +
-      '\nnpm install <tarball file>' +
-      '\nnpm install <tarball url>' +
-      '\nnpm install <git:// url>' +
-      '\nnpm install <github username>/<github project>',
-      '[--save-prod|--save-dev|--save-optional|--save-peer] [--save-exact] [--no-save]'
-    )
+  static get name () {
+    return 'install'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'save',
+      'save-exact',
+      'global',
+      'global-style',
+      'legacy-bundling',
+      'strict-peer-deps',
+      'package-lock',
+      'omit',
+      'ignore-scripts',
+      'audit',
+      'bin-links',
+      'fund',
+      'dry-run',
+      ...super.params,
+    ]
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return [
+      '[<@scope>/]<pkg>',
+      '[<@scope>/]<pkg>@<tag>',
+      '[<@scope>/]<pkg>@<version>',
+      '[<@scope>/]<pkg>@<version range>',
+      '<alias>@npm:<name>',
+      '<folder>',
+      '<tarball file>',
+      '<tarball url>',
+      '<git:// url>',
+      '<github username>/<github project>',
+    ]
   }
 
   async completion (opts) {
@@ -100,7 +123,8 @@ class Install {
   async install (args) {
     // the /path/to/node_modules/..
     const globalTop = resolve(this.npm.globalDir, '..')
-    const { ignoreScripts, global: isGlobalInstall } = this.npm.flatOptions
+    const ignoreScripts = this.npm.config.get('ignore-scripts')
+    const isGlobalInstall = this.npm.config.get('global')
     const where = isGlobalInstall ? globalTop : this.npm.prefix
 
     // don't try to install the prefix into itself
@@ -114,17 +138,19 @@ class Install {
     if (this.npm.config.get('dev'))
       log.warn('install', 'Usage of the `--dev` option is deprecated. Use `--include=dev` instead.')
 
-    const arb = new Arborist({
+    const opts = {
       ...this.npm.flatOptions,
+      log: this.npm.log,
+      auditLevel: null,
       path: where,
-    })
-
-    await arb.reify({
-      ...this.npm.flatOptions,
       add: args,
-    })
+      workspaces: this.workspaceNames,
+    }
+    const arb = new Arborist(opts)
+    await arb.reify(opts)
+
     if (!args.length && !isGlobalInstall && !ignoreScripts) {
-      const { scriptShell } = this.npm.flatOptions
+      const scriptShell = this.npm.config.get('script-shell') || undefined
       const scripts = [
         'preinstall',
         'install',

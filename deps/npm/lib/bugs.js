@@ -1,17 +1,25 @@
 const log = require('npmlog')
 const pacote = require('pacote')
 const openUrl = require('./utils/open-url.js')
-const usageUtil = require('./utils/usage.js')
 const hostedFromMani = require('./utils/hosted-git-info-from-manifest.js')
+const BaseCommand = require('./base-command.js')
 
-class Bugs {
-  constructor (npm) {
-    this.npm = npm
+class Bugs extends BaseCommand {
+  static get description () {
+    return 'Report bugs for a package in a web browser'
+  }
+
+  static get name () {
+    return 'bugs'
+  }
+
+  static get usage () {
+    return ['[<pkgname>]']
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('bugs', 'npm bugs [<pkgname>]')
+  static get params () {
+    return ['browser', 'registry']
   }
 
   exec (args, cb) {
@@ -40,6 +48,9 @@ class Bugs {
 
       if (typeof mani.bugs === 'object' && mani.bugs.url)
         return mani.bugs.url
+
+      if (typeof mani.bugs === 'object' && mani.bugs.email)
+        return `mailto:${mani.bugs.email}`
     }
 
     // try to get it from the repo, if possible

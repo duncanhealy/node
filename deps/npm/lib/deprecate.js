@@ -4,18 +4,29 @@ const npa = require('npm-package-arg')
 const semver = require('semver')
 const getIdentity = require('./utils/get-identity.js')
 const libaccess = require('libnpmaccess')
-const usageUtil = require('./utils/usage.js')
+const BaseCommand = require('./base-command.js')
 
-class Deprecate {
-  constructor (npm) {
-    this.npm = npm
+class Deprecate extends BaseCommand {
+  static get description () {
+    return 'Deprecate a version of a package'
   }
 
-  get usage () {
-    return usageUtil(
-      'deprecate',
-      'npm deprecate <pkg>[@<version>] <message>'
-    )
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get name () {
+    return 'deprecate'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['<pkg>[@<version>] <message>']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'registry',
+      'otp',
+    ]
   }
 
   async completion (opts) {
@@ -38,7 +49,8 @@ class Deprecate {
   }
 
   async deprecate ([pkg, msg]) {
-    if (!pkg || !msg)
+    // msg == null becase '' is a valid value, it indicates undeprecate
+    if (!pkg || msg == null)
       throw this.usageError()
 
     // fetch the data and make sure it exists.
@@ -70,12 +82,6 @@ class Deprecate {
       body: packument,
       ignoreBody: true,
     }))
-  }
-
-  usageError () {
-    return Object.assign(new Error(`\nUsage: ${this.usage}`), {
-      code: 'EUSAGE',
-    })
   }
 }
 

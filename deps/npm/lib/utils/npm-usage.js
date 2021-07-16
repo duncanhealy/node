@@ -1,15 +1,12 @@
-const didYouMean = require('./did-you-mean.js')
 const { dirname } = require('path')
-const output = require('./output.js')
 const { cmdList } = require('./cmd-list')
 
-module.exports = (npm, valid = true) => {
-  npm.config.set('loglevel', 'silent')
+module.exports = (npm) => {
   const usesBrowser = npm.config.get('viewer') === 'browser'
     ? ' (in a browser)' : ''
-  npm.log.level = 'silent'
-  output(`
-Usage: npm <command>
+  return `npm <command>
+
+Usage:
 
 npm install        install all the dependencies in your project
 npm install <foo>  add the <foo> dependency to your project
@@ -21,7 +18,7 @@ npm help <term>    search for help on <term>${usesBrowser}
 npm help npm       more involved overview${usesBrowser}
 
 All commands:
-${npm.config.get('long') ? usages(npm) : ('\n    ' + wrap(cmdList))}
+${allCommands(npm)}
 
 Specify configs in the ini-formatted file:
     ${npm.config.get('userconfig')}
@@ -30,14 +27,13 @@ or on the command line via: npm <command> --key=value
 More configuration info: npm help config
 Configuration fields: npm help 7 config
 
-npm@${npm.version} ${dirname(dirname(__dirname))}
-`)
+npm@${npm.version} ${dirname(dirname(__dirname))}`
+}
 
-  if (npm.argv.length >= 1)
-    output(didYouMean(npm.argv[0], cmdList))
-
-  if (!valid)
-    process.exitCode = 1
+const allCommands = (npm) => {
+  if (npm.config.get('long'))
+    return usages(npm)
+  return ('\n    ' + wrap(cmdList))
 }
 
 const wrap = (arr) => {
@@ -66,7 +62,7 @@ const usages = (npm) => {
     maxLen = Math.max(maxLen, c.length)
     return set
   }, [])
-    .sort((a, b) => a[0].localeCompare(b[0]))
+    .sort((a, b) => a[0].localeCompare(b[0], 'en'))
     .map(([c, usage]) => `\n    ${c}${' '.repeat(maxLen - c.length + 1)}${
       (usage.split('\n').join('\n' + ' '.repeat(maxLen + 5)))}`)
     .join('\n')

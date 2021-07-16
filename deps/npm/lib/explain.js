@@ -1,21 +1,33 @@
-const usageUtil = require('./utils/usage.js')
 const { explainNode } = require('./utils/explain-dep.js')
 const completion = require('./utils/completion/installed-deep.js')
-const output = require('./utils/output.js')
 const Arborist = require('@npmcli/arborist')
 const npa = require('npm-package-arg')
 const semver = require('semver')
 const { relative, resolve } = require('path')
 const validName = require('validate-npm-package-name')
+const ArboristWorkspaceCmd = require('./workspaces/arborist-cmd.js')
 
-class Explain {
-  constructor (npm) {
-    this.npm = npm
+class Explain extends ArboristWorkspaceCmd {
+  static get description () {
+    return 'Explain installed packages'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('explain', 'npm explain <folder | specifier>')
+  static get name () {
+    return 'explain'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['<folder | specifier>']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'json',
+      'workspace',
+    ]
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
@@ -34,10 +46,18 @@ class Explain {
     const arb = new Arborist({ path: this.npm.prefix, ...this.npm.flatOptions })
     const tree = await arb.loadActual()
 
+    if (this.workspaceNames && this.workspaceNames.length)
+      this.filterSet = arb.workspaceDependencySet(tree, this.workspaceNames)
+
     const nodes = new Set()
     for (const arg of args) {
-      for (const node of this.getNodes(tree, arg))
-        nodes.add(node)
+      for (const node of this.getNodes(tree, arg)) {
+        const filteredOut = this.filterSet
+          && this.filterSet.size > 0
+          && !this.filterSet.has(node)
+        if (!filteredOut)
+          nodes.add(node)
+      }
     }
     if (nodes.size === 0)
       throw `No dependencies found matching ${args.join(', ')}`
@@ -59,9 +79,9 @@ class Explain {
     }
 
     if (this.npm.flatOptions.json)
-      output(JSON.stringify(expls, null, 2))
+      this.npm.output(JSON.stringify(expls, null, 2))
     else {
-      output(expls.map(expl => {
+      this.npm.output(expls.map(expl => {
         return explainNode(expl, Infinity, this.npm.color)
       }).join('\n\n'))
     }
@@ -71,7 +91,7 @@ class Explain {
     // if it's just a name, return packages by that name
     const { validForOldPackages: valid } = validName(arg)
     if (valid)
-      return tree.inventory.query('name', arg)
+      return tree.inventory.query('packageName', arg)
 
     // if it's a location, get that node
     const maybeLoc = arg.replace(/\\/g, '/').replace(/\/+$/, '')

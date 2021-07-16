@@ -1,5 +1,5 @@
 const t = require('tap')
-const requireInject = require('require-inject')
+const { fake: mockNpm } = require('../fixtures/mock-npm')
 
 t.test('should audit using Arborist', t => {
   let ARB_ARGS = null
@@ -9,13 +9,16 @@ t.test('should audit using Arborist', t => {
   let OUTPUT_CALLED = false
   let ARB_OBJ = null
 
-  const npm = {
+  const npm = mockNpm({
     prefix: 'foo',
-    flatOptions: {
+    config: {
       json: false,
     },
-  }
-  const Audit = requireInject('../../lib/audit.js', {
+    output: () => {
+      OUTPUT_CALLED = true
+    },
+  })
+  const Audit = t.mock('../../lib/audit.js', {
     'npm-audit-report': () => {
       AUDIT_REPORT_CALLED = true
       return {
@@ -36,9 +39,6 @@ t.test('should audit using Arborist', t => {
         throw new Error('got wrong object passed to reify-output')
 
       REIFY_FINISH_CALLED = true
-    },
-    '../../lib/utils/output.js': () => {
-      OUTPUT_CALLED = true
     },
   })
 
@@ -65,14 +65,15 @@ t.test('should audit using Arborist', t => {
 })
 
 t.test('should audit - json', t => {
-  const npm = {
+  const npm = mockNpm({
     prefix: 'foo',
-    flatOptions: {
+    config: {
       json: true,
     },
-  }
+    output: () => {},
+  })
 
-  const Audit = requireInject('../../lib/audit.js', {
+  const Audit = t.mock('../../lib/audit.js', {
     'npm-audit-report': () => ({
       report: 'there are vulnerabilities',
       exitCode: 0,
@@ -83,7 +84,6 @@ t.test('should audit - json', t => {
       }
     },
     '../../lib/utils/reify-output.js': () => {},
-    '../../lib/utils/output.js': () => {},
   })
   const audit = new Audit(npm)
 
@@ -98,17 +98,23 @@ t.test('report endpoint error', t => {
     t.test(`json=${json}`, t => {
       const OUTPUT = []
       const LOGS = []
-      const npm = {
+      const npm = mockNpm({
         prefix: 'foo',
         command: 'audit',
+        config: {
+          json,
+        },
         flatOptions: {
           json,
         },
         log: {
           warn: (...warning) => LOGS.push(warning),
         },
-      }
-      const Audit = requireInject('../../lib/audit.js', {
+        output: (...msg) => {
+          OUTPUT.push(msg)
+        },
+      })
+      const Audit = t.mock('../../lib/audit.js', {
         'npm-audit-report': () => {
           throw new Error('should not call audit report when there are errors')
         },
@@ -130,9 +136,6 @@ t.test('report endpoint error', t => {
           }
         },
         '../../lib/utils/reify-output.js': () => {},
-        '../../lib/utils/output.js': (...msg) => {
-          OUTPUT.push(msg)
-        },
       })
       const audit = new Audit(npm)
 

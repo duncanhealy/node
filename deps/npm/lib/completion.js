@@ -29,30 +29,30 @@
 // as an array.
 //
 
-const { types, shorthands } = require('./utils/config.js')
+const { definitions, shorthands } = require('./utils/config/index.js')
 const deref = require('./utils/deref-command.js')
 const { aliases, cmdList, plumbing } = require('./utils/cmd-list.js')
 const aliasNames = Object.keys(aliases)
 const fullList = cmdList.concat(aliasNames).filter(c => !plumbing.includes(c))
 const nopt = require('nopt')
-const configNames = Object.keys(types)
+const configNames = Object.keys(definitions)
 const shorthandNames = Object.keys(shorthands)
 const allConfs = configNames.concat(shorthandNames)
 const isWindowsShell = require('./utils/is-windows-shell.js')
-const output = require('./utils/output.js')
 const fileExists = require('./utils/file-exists.js')
 
-const usageUtil = require('./utils/usage.js')
 const { promisify } = require('util')
+const BaseCommand = require('./base-command.js')
 
-class Completion {
-  constructor (npm) {
-    this.npm = npm
+class Completion extends BaseCommand {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Tab Completion for npm'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('completion', 'source <(npm completion)')
+  static get name () {
+    return 'completion'
   }
 
   // completion for the completion command
@@ -131,14 +131,14 @@ class Completion {
 
     if (partialWords.slice(0, -1).indexOf('--') === -1) {
       if (word.charAt(0) === '-')
-        return wrap(opts, configCompl(opts))
+        return this.wrap(opts, configCompl(opts))
 
       if (words[w - 1] &&
         words[w - 1].charAt(0) === '-' &&
         !isFlag(words[w - 1])) {
         // awaiting a value for a non-bool config.
         // don't even try to do this for now
-        return wrap(opts, configValueCompl(opts))
+        return this.wrap(opts, configValueCompl(opts))
       }
     }
 
@@ -147,12 +147,16 @@ class Completion {
     // take a little shortcut and use npm's arg parsing logic.
     // don't have to worry about the last arg being implicitly
     // boolean'ed, since the last block will catch that.
+    const types = Object.entries(definitions).reduce((types, [key, def]) => {
+      types[key] = def.type
+      return types
+    }, {})
     const parsed = opts.conf =
       nopt(types, shorthands, partialWords.slice(0, -1), 0)
     // check if there's a command already.
     const cmd = parsed.argv.remain[1]
     if (!cmd)
-      return wrap(opts, cmdCompl(opts))
+      return this.wrap(opts, cmdCompl(opts))
 
     Object.keys(parsed).forEach(k => this.npm.config.set(k, parsed[k]))
 
@@ -162,8 +166,28 @@ class Completion {
     const impl = this.npm.commands[cmd]
     if (impl && impl.completion) {
       const comps = await impl.completion(opts)
-      return wrap(opts, comps)
+      return this.wrap(opts, comps)
     }
+  }
+
+  // The command should respond with an array.  Loop over that,
+  // wrapping quotes around any that have spaces, and writing
+  // them to stdout.
+  // If any of the items are arrays, then join them with a space.
+  // Ie, returning ['a', 'b c', ['d', 'e']] would allow it to expand
+  // to: 'a', 'b c', or 'd' 'e'
+  wrap (opts, compls) {
+    if (!Array.isArray(compls))
+      compls = compls ? [compls] : []
+
+    compls = compls.map(c =>
+      Array.isArray(c) ? c.map(escape).join(' ') : escape(c))
+
+    if (opts.partialWord)
+      compls = compls.filter(c => c.startsWith(opts.partialWord))
+
+    if (compls.length > 0)
+      this.npm.output(compls.join('\n'))
   }
 }
 
@@ -214,26 +238,6 @@ const unescape = w => w.charAt(0) === '\'' ? w.replace(/^'|'$/g, '')
 const escape = w => !/\s+/.test(w) ? w
   : '\'' + w + '\''
 
-// The command should respond with an array.  Loop over that,
-// wrapping quotes around any that have spaces, and writing
-// them to stdout.
-// If any of the items are arrays, then join them with a space.
-// Ie, returning ['a', 'b c', ['d', 'e']] would allow it to expand
-// to: 'a', 'b c', or 'd' 'e'
-const wrap = (opts, compls) => {
-  if (!Array.isArray(compls))
-    compls = compls ? [compls] : []
-
-  compls = compls.map(c =>
-    Array.isArray(c) ? c.map(escape).join(' ') : escape(c))
-
-  if (opts.partialWord)
-    compls = compls.filter(c => c.startsWith(opts.partialWord))
-
-  if (compls.length > 0)
-    output(compls.join('\n'))
-}
-
 // the current word has a dash.  Return the config names,
 // with the same number of dashes as the current word has.
 const configCompl = opts => {
@@ -256,7 +260,7 @@ const isFlag = word => {
   const split = word.match(/^(-*)((?:no-)+)?(.*)$/)
   const no = split[2]
   const conf = split[3]
-  const type = types[conf]
+  const {type} = definitions[conf]
   return no ||
     type === Boolean ||
     (Array.isArray(type) && type.includes(Boolean)) ||

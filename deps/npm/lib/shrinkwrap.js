@@ -5,16 +5,16 @@ const { unlink } = fs.promises || { unlink: util.promisify(fs.unlink) }
 const Arborist = require('@npmcli/arborist')
 const log = require('npmlog')
 
-const usageUtil = require('./utils/usage.js')
-
-class Shrinkwrap {
-  constructor (npm) {
-    this.npm = npm
+const BaseCommand = require('./base-command.js')
+class Shrinkwrap extends BaseCommand {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Lock down dependency versions for publication'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('shrinkwrap', 'npm shrinkwrap')
+  static get name () {
+    return 'shrinkwrap'
   }
 
   exec (args, cb) {
@@ -29,7 +29,7 @@ class Shrinkwrap {
     //
     // loadVirtual, fall back to loadActual
     // rename shrinkwrap file type, and tree.meta.save()
-    if (this.npm.flatOptions.global) {
+    if (this.npm.config.get('global')) {
       const er = new Error('`npm shrinkwrap` does not work for global packages')
       er.code = 'ESHRINKWRAPGLOBAL'
       throw er

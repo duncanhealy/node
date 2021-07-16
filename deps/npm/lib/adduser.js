@@ -1,7 +1,6 @@
 const log = require('npmlog')
-const output = require('./utils/output.js')
-const usageUtil = require('./utils/usage.js')
 const replaceInfo = require('./utils/replace-info.js')
+const BaseCommand = require('./base-command.js')
 const authTypes = {
   legacy: require('./auth/legacy.js'),
   oauth: require('./auth/oauth.js'),
@@ -9,17 +8,20 @@ const authTypes = {
   sso: require('./auth/sso.js'),
 }
 
-class AddUser {
-  constructor (npm) {
-    this.npm = npm
+class AddUser extends BaseCommand {
+  static get description () {
+    return 'Add a registry user account'
   }
 
-  /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil(
-      'adduser',
-      'npm adduser [--registry=url] [--scope=@orgname] [--always-auth]'
-    )
+  static get name () {
+    return 'adduser'
+  }
+
+  static get params () {
+    return [
+      'registry',
+      'scope',
+    ]
   }
 
   exec (args, cb) {
@@ -49,7 +51,7 @@ class AddUser {
       scope,
     })
 
-    output(message)
+    this.npm.output(message)
   }
 
   getRegistry ({ scope, registry }) {
@@ -73,11 +75,9 @@ class AddUser {
 
   async updateConfig ({ newCreds, registry, scope }) {
     this.npm.config.delete('_token', 'user') // prevent legacy pollution
-
+    this.npm.config.setCredentialsByURI(registry, newCreds)
     if (scope)
       this.npm.config.set(scope + ':registry', registry, 'user')
-
-    this.npm.config.setCredentialsByURI(registry, newCreds)
     await this.npm.config.save('user')
   }
 }

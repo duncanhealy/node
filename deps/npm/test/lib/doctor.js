@@ -1,5 +1,4 @@
-const { test } = require('tap')
-const requireInject = require('require-inject')
+const t = require('tap')
 
 const { join } = require('path')
 const fs = require('fs')
@@ -104,6 +103,9 @@ const npm = {
     },
   },
   version: '7.1.0',
+  output: (data) => {
+    output.push(data)
+  },
 }
 
 let latestNpm = npm.version
@@ -120,12 +122,9 @@ const cacache = {
   },
 }
 
-const Doctor = requireInject('../../lib/doctor.js', {
+const Doctor = t.mock('../../lib/doctor.js', {
   '../../lib/utils/is-windows.js': false,
   '../../lib/utils/ping.js': ping,
-  '../../lib/utils/output.js': (data) => {
-    output.push(data)
-  },
   cacache,
   pacote,
   'make-fetch-happen': fetch,
@@ -134,7 +133,7 @@ const Doctor = requireInject('../../lib/doctor.js', {
 const doctor = new Doctor(npm)
 
 const origVersion = process.version
-test('node versions', t => {
+t.test('node versions', t => {
   t.plan(nodeVersions.length)
 
   nodeVersions.forEach(({ version }) => {
@@ -276,18 +275,15 @@ test('node versions', t => {
           st.match(output, /local bin folder.*ok/, 'local bin is ok')
           st.match(output, /global bin folder.*ok/, 'global bin is ok')
           st.match(output, /cache contents.*ok/, 'cache contents is ok')
-          st.notEqual(output[0], ansiTrim(output[0]), 'output should contain color codes')
+          st.not(output[0], ansiTrim(output[0]), 'output should contain color codes')
           st.end()
         })
       })
 
       vt.test('npm doctor skips some tests in windows', st => {
-        const WinDoctor = requireInject('../../lib/doctor.js', {
+        const WinDoctor = t.mock('../../lib/doctor.js', {
           '../../lib/utils/is-windows.js': true,
           '../../lib/utils/ping.js': ping,
-          '../../lib/utils/output.js': (data) => {
-            output.push(data)
-          },
           cacache,
           pacote,
           'make-fetch-happen': fetch,
@@ -563,12 +559,9 @@ test('node versions', t => {
           }
         }
 
-        const Doctor = requireInject('../../lib/doctor.js', {
+        const Doctor = t.mock('../../lib/doctor.js', {
           '../../lib/utils/is-windows.js': false,
           '../../lib/utils/ping.js': ping,
-          '../../lib/utils/output.js': (data) => {
-            output.push(data)
-          },
           cacache,
           pacote,
           'make-fetch-happen': fetch,
@@ -909,7 +902,7 @@ test('node versions', t => {
   })
 })
 
-test('outdated node version', vt => {
+t.test('outdated node version', vt => {
   vt.plan(1)
   const version = 'v10.0.0'
 

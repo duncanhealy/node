@@ -1,19 +1,25 @@
 const log = require('npmlog')
 const getAuth = require('npm-registry-fetch/auth.js')
 const npmFetch = require('npm-registry-fetch')
-const usageUtil = require('./utils/usage.js')
+const BaseCommand = require('./base-command.js')
 
-class Logout {
-  constructor (npm) {
-    this.npm = npm
+class Logout extends BaseCommand {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Log out of the registry'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil(
-      'logout',
-      'npm logout [--registry=<url>] [--scope=<@scope>]'
-    )
+  static get name () {
+    return 'logout'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'registry',
+      'scope',
+    ]
   }
 
   exec (args, cb) {
@@ -21,9 +27,10 @@ class Logout {
   }
 
   async logout (args) {
-    const { registry, scope } = this.npm.flatOptions
+    const registry = this.npm.config.get('registry')
+    const scope = this.npm.config.get('scope')
     const regRef = scope ? `${scope}:registry` : 'registry'
-    const reg = this.npm.flatOptions[regRef] || registry
+    const reg = this.npm.config.get(regRef) || registry
 
     const auth = getAuth(reg, this.npm.flatOptions)
 
@@ -34,7 +41,7 @@ class Logout {
         method: 'DELETE',
         ignoreBody: true,
       })
-    } else if (auth.username || auth.password)
+    } else if (auth.isBasicAuth)
       log.verbose('logout', `clearing user credentials for ${reg}`)
     else {
       const msg = `not logged in to ${reg}, so can't log out!`

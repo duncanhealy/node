@@ -1,7 +1,7 @@
-const { test } = require('tap')
-const requireInject = require('require-inject')
+const t = require('tap')
 const ansiTrim = require('../../lib/utils/ansi-trim.js')
 
+const output = []
 const npm = {
   flatOptions: {
     json: false,
@@ -9,9 +9,10 @@ const npm = {
     silent: false,
     loglevel: 'info',
   },
+  output: (msg) => {
+    output.push(msg)
+  },
 }
-
-const output = []
 
 let orgSize = 1
 let orgSetArgs = null
@@ -39,16 +40,13 @@ const libnpmorg = {
   },
 }
 
-const Org = requireInject('../../lib/org.js', {
+const Org = t.mock('../../lib/org.js', {
   '../../lib/utils/otplease.js': async (opts, fn) => fn(opts),
-  '../../lib/utils/output.js': (msg) => {
-    output.push(msg)
-  },
   libnpmorg,
 })
 const org = new Org(npm)
 
-test('completion', async t => {
+t.test('completion', async t => {
   const completion = (argv) =>
     org.completion({ conf: { argv: { remain: argv } } })
 
@@ -66,14 +64,14 @@ test('completion', async t => {
   t.rejects(completion(['npm', 'org', 'flurb']), /flurb not recognized/, 'errors for unknown subcommand')
 })
 
-test('npm org - invalid subcommand', t => {
+t.test('npm org - invalid subcommand', t => {
   org.exec(['foo'], (err) => {
     t.match(err, /npm org set/, 'prints usage information')
     t.end()
   })
 })
 
-test('npm org add', t => {
+t.test('npm org add', t => {
   t.teardown(() => {
     orgSetArgs = null
     output.length = 0
@@ -94,7 +92,7 @@ test('npm org add', t => {
   })
 })
 
-test('npm org add - no org', t => {
+t.test('npm org add - no org', t => {
   t.teardown(() => {
     orgSetArgs = null
     output.length = 0
@@ -106,7 +104,7 @@ test('npm org add - no org', t => {
   })
 })
 
-test('npm org add - no user', t => {
+t.test('npm org add - no user', t => {
   t.teardown(() => {
     orgSetArgs = null
     output.length = 0
@@ -118,7 +116,7 @@ test('npm org add - no user', t => {
   })
 })
 
-test('npm org add - invalid role', t => {
+t.test('npm org add - invalid role', t => {
   t.teardown(() => {
     orgSetArgs = null
     output.length = 0
@@ -130,7 +128,7 @@ test('npm org add - invalid role', t => {
   })
 })
 
-test('npm org add - more users', t => {
+t.test('npm org add - more users', t => {
   orgSize = 5
   t.teardown(() => {
     orgSize = 1
@@ -153,7 +151,7 @@ test('npm org add - more users', t => {
   })
 })
 
-test('npm org add - json output', t => {
+t.test('npm org add - json output', t => {
   npm.flatOptions.json = true
   t.teardown(() => {
     npm.flatOptions.json = false
@@ -183,7 +181,7 @@ test('npm org add - json output', t => {
   })
 })
 
-test('npm org add - parseable output', t => {
+t.test('npm org add - parseable output', t => {
   npm.flatOptions.parseable = true
   t.teardown(() => {
     npm.flatOptions.parseable = false
@@ -209,7 +207,7 @@ test('npm org add - parseable output', t => {
   })
 })
 
-test('npm org add - silent output', t => {
+t.test('npm org add - silent output', t => {
   npm.flatOptions.silent = true
   t.teardown(() => {
     npm.flatOptions.silent = false
@@ -232,7 +230,7 @@ test('npm org add - silent output', t => {
   })
 })
 
-test('npm org rm', t => {
+t.test('npm org rm', t => {
   t.teardown(() => {
     orgRmArgs = null
     orgLsArgs = null
@@ -257,7 +255,7 @@ test('npm org rm', t => {
   })
 })
 
-test('npm org rm - no org', t => {
+t.test('npm org rm - no org', t => {
   t.teardown(() => {
     orgRmArgs = null
     orgLsArgs = null
@@ -270,7 +268,7 @@ test('npm org rm - no org', t => {
   })
 })
 
-test('npm org rm - no user', t => {
+t.test('npm org rm - no user', t => {
   t.teardown(() => {
     orgRmArgs = null
     orgLsArgs = null
@@ -283,7 +281,7 @@ test('npm org rm - no user', t => {
   })
 })
 
-test('npm org rm - one user left', t => {
+t.test('npm org rm - one user left', t => {
   orgList = {
     one: 'developer',
   }
@@ -313,7 +311,7 @@ test('npm org rm - one user left', t => {
   })
 })
 
-test('npm org rm - json output', t => {
+t.test('npm org rm - json output', t => {
   npm.flatOptions.json = true
   t.teardown(() => {
     npm.flatOptions.json = false
@@ -345,7 +343,7 @@ test('npm org rm - json output', t => {
   })
 })
 
-test('npm org rm - parseable output', t => {
+t.test('npm org rm - parseable output', t => {
   npm.flatOptions.parseable = true
   t.teardown(() => {
     npm.flatOptions.parseable = false
@@ -375,7 +373,7 @@ test('npm org rm - parseable output', t => {
   })
 })
 
-test('npm org rm - silent output', t => {
+t.test('npm org rm - silent output', t => {
   npm.flatOptions.silent = true
   t.teardown(() => {
     npm.flatOptions.silent = false
@@ -402,7 +400,7 @@ test('npm org rm - silent output', t => {
   })
 })
 
-test('npm org ls', t => {
+t.test('npm org ls', t => {
   orgList = {
     one: 'developer',
     two: 'admin',
@@ -430,7 +428,7 @@ test('npm org ls', t => {
   })
 })
 
-test('npm org ls - user filter', t => {
+t.test('npm org ls - user filter', t => {
   orgList = {
     username: 'admin',
     missing: 'admin',
@@ -456,7 +454,7 @@ test('npm org ls - user filter', t => {
   })
 })
 
-test('npm org ls - user filter, missing user', t => {
+t.test('npm org ls - user filter, missing user', t => {
   orgList = {
     missing: 'admin',
   }
@@ -481,7 +479,7 @@ test('npm org ls - user filter, missing user', t => {
   })
 })
 
-test('npm org ls - no org', t => {
+t.test('npm org ls - no org', t => {
   t.teardown(() => {
     orgLsArgs = null
     output.length = 0
@@ -493,7 +491,7 @@ test('npm org ls - no org', t => {
   })
 })
 
-test('npm org ls - json output', t => {
+t.test('npm org ls - json output', t => {
   npm.flatOptions.json = true
   orgList = {
     one: 'developer',
@@ -520,7 +518,7 @@ test('npm org ls - json output', t => {
   })
 })
 
-test('npm org ls - parseable output', t => {
+t.test('npm org ls - parseable output', t => {
   npm.flatOptions.parseable = true
   orgList = {
     one: 'developer',
@@ -552,7 +550,7 @@ test('npm org ls - parseable output', t => {
   })
 })
 
-test('npm org ls - silent output', t => {
+t.test('npm org ls - silent output', t => {
   npm.flatOptions.silent = true
   orgList = {
     one: 'developer',

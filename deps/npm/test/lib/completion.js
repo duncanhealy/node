@@ -1,5 +1,4 @@
-const { test } = require('tap')
-const requireInject = require('require-inject')
+const t = require('tap')
 const fs = require('fs')
 const path = require('path')
 
@@ -46,6 +45,9 @@ const npm = {
       },
     },
   },
+  output: (line) => {
+    output.push(line)
+  },
 }
 
 const cmdList = {
@@ -60,11 +62,14 @@ const cmdList = {
   plumbing: [],
 }
 
+// only include a subset so that the snapshots aren't huge and
+// don't change when we add/remove config definitions.
+const definitions = require('../../lib/utils/config/definitions.js')
 const config = {
-  types: {
-    global: Boolean,
-    browser: [null, Boolean, String],
-    registry: [null, String],
+  definitions: {
+    global: definitions.global,
+    browser: definitions.browser,
+    registry: definitions.registry,
   },
   shorthands: {
     reg: ['--registry'],
@@ -75,18 +80,15 @@ const deref = (cmd) => {
   return cmd
 }
 
-const Completion = requireInject('../../lib/completion.js', {
+const Completion = t.mock('../../lib/completion.js', {
   '../../lib/utils/cmd-list.js': cmdList,
-  '../../lib/utils/config.js': config,
+  '../../lib/utils/config/index.js': config,
   '../../lib/utils/deref-command.js': deref,
   '../../lib/utils/is-windows-shell.js': false,
-  '../../lib/utils/output.js': (line) => {
-    output.push(line)
-  },
 })
 const completion = new Completion(npm)
 
-test('completion completion', async t => {
+t.test('completion completion', async t => {
   const home = process.env.HOME
   t.teardown(() => {
     process.env.HOME = home
@@ -105,7 +107,7 @@ test('completion completion', async t => {
   t.end()
 })
 
-test('completion completion no known shells', async t => {
+t.test('completion completion no known shells', async t => {
   const home = process.env.HOME
   t.teardown(() => {
     process.env.HOME = home
@@ -118,14 +120,14 @@ test('completion completion no known shells', async t => {
   t.end()
 })
 
-test('completion completion wrong word count', async t => {
+t.test('completion completion wrong word count', async t => {
   const res = await completion.completion({ w: 3 })
   t.strictSame(res, undefined, 'no responses')
   t.end()
 })
 
-test('completion errors in windows without bash', t => {
-  const Compl = requireInject('../../lib/completion.js', {
+t.test('completion errors in windows without bash', t => {
+  const Compl = t.mock('../../lib/completion.js', {
     '../../lib/utils/is-windows-shell.js': true,
   })
 
@@ -140,7 +142,7 @@ test('completion errors in windows without bash', t => {
   })
 })
 
-test('dump script when completion is not being attempted', t => {
+t.test('dump script when completion is not being attempted', t => {
   const _write = process.stdout.write
   const _on = process.stdout.on
   t.teardown(() => {
@@ -173,7 +175,7 @@ test('dump script when completion is not being attempted', t => {
   })
 })
 
-test('dump script exits correctly when EPIPE is emitted on stdout', t => {
+t.test('dump script exits correctly when EPIPE is emitted on stdout', t => {
   const _write = process.stdout.write
   const _on = process.stdout.on
   t.teardown(() => {
@@ -206,7 +208,7 @@ test('dump script exits correctly when EPIPE is emitted on stdout', t => {
   })
 })
 
-test('non EPIPE errors cause failures', t => {
+t.test('non EPIPE errors cause failures', t => {
   const _write = process.stdout.write
   const _on = process.stdout.on
   t.teardown(() => {
@@ -237,7 +239,7 @@ test('non EPIPE errors cause failures', t => {
   })
 })
 
-test('completion completes single command name', t => {
+t.test('completion completes single command name', t => {
   process.env.COMP_CWORD = 1
   process.env.COMP_LINE = 'npm c'
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -259,7 +261,7 @@ test('completion completes single command name', t => {
   })
 })
 
-test('completion completes command names', t => {
+t.test('completion completes command names', t => {
   process.env.COMP_CWORD = 1
   process.env.COMP_LINE = 'npm a'
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -281,7 +283,7 @@ test('completion completes command names', t => {
   })
 })
 
-test('completion of invalid command name does nothing', t => {
+t.test('completion of invalid command name does nothing', t => {
   process.env.COMP_CWORD = 1
   process.env.COMP_LINE = 'npm compute'
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -303,7 +305,7 @@ test('completion of invalid command name does nothing', t => {
   })
 })
 
-test('handles async completion function', t => {
+t.test('handles async completion function', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm promise'
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -332,7 +334,7 @@ test('handles async completion function', t => {
   })
 })
 
-test('completion triggers command completions', t => {
+t.test('completion triggers command completions', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm access '
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -361,7 +363,7 @@ test('completion triggers command completions', t => {
   })
 })
 
-test('completion triggers filtered command completions', t => {
+t.test('completion triggers filtered command completions', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm access p'
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -390,7 +392,7 @@ test('completion triggers filtered command completions', t => {
   })
 })
 
-test('completions for commands that return nested arrays are joined', t => {
+t.test('completions for commands that return nested arrays are joined', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm completion '
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -419,7 +421,7 @@ test('completions for commands that return nested arrays are joined', t => {
   })
 })
 
-test('completions for commands that return nothing work correctly', t => {
+t.test('completions for commands that return nothing work correctly', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm donothing '
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -448,7 +450,7 @@ test('completions for commands that return nothing work correctly', t => {
   })
 })
 
-test('completions for commands that return a single item work correctly', t => {
+t.test('completions for commands that return a single item work correctly', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm driveaboat '
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -477,7 +479,7 @@ test('completions for commands that return a single item work correctly', t => {
   })
 })
 
-test('command completion for commands with no completion return no results', t => {
+t.test('command completion for commands with no completion return no results', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm adduser '
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -507,7 +509,7 @@ test('command completion for commands with no completion return no results', t =
   })
 })
 
-test('command completion errors propagate', t => {
+t.test('command completion errors propagate', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm access '
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -536,7 +538,7 @@ test('command completion errors propagate', t => {
   })
 })
 
-test('completion can complete flags', t => {
+t.test('completion can complete flags', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm install --'
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -559,7 +561,7 @@ test('completion can complete flags', t => {
   })
 })
 
-test('double dashes escape from flag completion', t => {
+t.test('double dashes escape from flag completion', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm -- install --'
   process.env.COMP_POINT = process.env.COMP_LINE.length
@@ -582,7 +584,7 @@ test('double dashes escape from flag completion', t => {
   })
 })
 
-test('completion cannot complete options that take a value in mid-command', t => {
+t.test('completion cannot complete options that take a value in mid-command', t => {
   process.env.COMP_CWORD = 2
   process.env.COMP_LINE = 'npm --registry install'
   process.env.COMP_POINT = process.env.COMP_LINE.length

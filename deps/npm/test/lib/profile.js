@@ -1,14 +1,23 @@
 const t = require('tap')
-const requireInject = require('require-inject')
+const { fake: mockNpm } = require('../fixtures/mock-npm')
 
 let result = ''
-const flatOptions = {
+const config = {
   otp: '',
   json: false,
   parseable: false,
   registry: 'https://registry.npmjs.org/',
 }
-const npm = { config: {}, flatOptions: { ...flatOptions }}
+const flatOptions = {
+  registry: 'https://registry.npmjs.org/',
+}
+const npm = mockNpm({
+  config,
+  flatOptions,
+  output: (...msg) => {
+    result = result ? `${result}\n${msg.join('\n')}` : msg.join('\n')
+  },
+})
 const mocks = {
   ansistyles: { bright: a => a },
   npmlog: {
@@ -31,9 +40,6 @@ const mocks = {
           .map(i => i.join(': ')))
         .join('\n')
     }
-  },
-  '../../lib/utils/output.js': (...msg) => {
-    result += msg.join('\n')
   },
   '../../lib/utils/pulse-till-done.js': {
     withPromise: async a => a,
@@ -60,14 +66,15 @@ const userProfile = {
   github: 'https://github.com/npm',
 }
 
-t.afterEach(cb => {
+t.afterEach(() => {
   result = ''
-  npm.config = {}
-  npm.flatOptions = { ...flatOptions }
-  cb()
+  flatOptions.otp = ''
+  config.json = false
+  config.parseable = false
+  config.registry = 'https://registry.npmjs.org/'
 })
 
-const Profile = requireInject('../../lib/profile.js', mocks)
+const Profile = t.mock('../../lib/profile.js', mocks)
 const profile = new Profile(npm)
 
 t.test('no args', t => {
@@ -88,7 +95,7 @@ t.test('profile get no args', t => {
     },
   }
 
-  const Profile = requireInject('../../lib/profile.js', {
+  const Profile = t.mock('../../lib/profile.js', {
     ...mocks,
     'npm-profile': npmProfile,
   })
@@ -108,13 +115,13 @@ t.test('profile get no args', t => {
   })
 
   t.test('--json', t => {
-    npm.flatOptions.json = true
+    config.json = true
 
     profile.exec(['get'], err => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         userProfile,
         'should output json profile result'
@@ -124,7 +131,7 @@ t.test('profile get no args', t => {
   })
 
   t.test('--parseable', t => {
-    npm.flatOptions.parseable = true
+    config.parseable = true
 
     profile.exec(['get'], err => {
       if (err)
@@ -148,7 +155,7 @@ t.test('profile get no args', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
     })
@@ -176,7 +183,7 @@ t.test('profile get no args', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
     })
@@ -204,7 +211,7 @@ t.test('profile get no args', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
     })
@@ -232,7 +239,7 @@ t.test('profile get <key>', t => {
     },
   }
 
-  const Profile = requireInject('../../lib/profile.js', {
+  const Profile = t.mock('../../lib/profile.js', {
     ...mocks,
     'npm-profile': npmProfile,
   })
@@ -253,13 +260,13 @@ t.test('profile get <key>', t => {
   })
 
   t.test('--json', t => {
-    npm.flatOptions.json = true
+    config.json = true
 
     profile.exec(['get', 'name'], err => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         userProfile,
         'should output json profile result ignoring args filter'
@@ -269,7 +276,7 @@ t.test('profile get <key>', t => {
   })
 
   t.test('--parseable', t => {
-    npm.flatOptions.parseable = true
+    config.parseable = true
 
     profile.exec(['get', 'name'], err => {
       if (err)
@@ -293,7 +300,7 @@ t.test('profile get multiple args', t => {
     },
   }
 
-  const Profile = requireInject('../../lib/profile.js', {
+  const Profile = t.mock('../../lib/profile.js', {
     ...mocks,
     'npm-profile': npmProfile,
   })
@@ -313,13 +320,13 @@ t.test('profile get multiple args', t => {
   })
 
   t.test('--json', t => {
-    npm.flatOptions.json = true
+    config.json = true
 
     profile.exec(['get', 'name', 'email', 'github'], err => {
       if (err)
         throw err
 
-      t.deepEqual(
+      t.same(
         JSON.parse(result),
         userProfile,
         'should output json profile result and ignore args'
@@ -329,7 +336,7 @@ t.test('profile get multiple args', t => {
   })
 
   t.test('--parseable', t => {
-    npm.flatOptions.parseable = true
+    config.parseable = true
 
     profile.exec(['get', 'name', 'email', 'github'], err => {
       if (err)
@@ -427,7 +434,7 @@ t.test('profile set <key> <value>', t => {
     t.test('default output', t => {
       t.plan(2)
 
-      const Profile = requireInject('../../lib/profile.js', {
+      const Profile = t.mock('../../lib/profile.js', {
         ...mocks,
         'npm-profile': npmProfile(t),
       })
@@ -448,9 +455,9 @@ t.test('profile set <key> <value>', t => {
     t.test('--json', t => {
       t.plan(2)
 
-      npm.flatOptions.json = true
+      config.json = true
 
-      const Profile = requireInject('../../lib/profile.js', {
+      const Profile = t.mock('../../lib/profile.js', {
         ...mocks,
         'npm-profile': npmProfile(t),
       })
@@ -460,7 +467,7 @@ t.test('profile set <key> <value>', t => {
         if (err)
           throw err
 
-        t.deepEqual(
+        t.same(
           JSON.parse(result),
           {
             fullname: 'Lorem Ipsum',
@@ -473,9 +480,9 @@ t.test('profile set <key> <value>', t => {
     t.test('--parseable', t => {
       t.plan(2)
 
-      npm.flatOptions.parseable = true
+      config.parseable = true
 
-      const Profile = requireInject('../../lib/profile.js', {
+      const Profile = t.mock('../../lib/profile.js', {
         ...mocks,
         'npm-profile': npmProfile(t),
       })
@@ -522,7 +529,7 @@ t.test('profile set <key> <value>', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
     })
@@ -586,7 +593,7 @@ t.test('profile set <key> <value>', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       '../../lib/utils/read-user-info.js': readUserInfo,
@@ -654,7 +661,7 @@ t.test('profile set <key> <value>', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       npmlog,
       'npm-profile': npmProfile,
@@ -702,7 +709,7 @@ t.test('enable-2fa', t => {
   })
 
   t.test('no support for --json output', t => {
-    npm.flatOptions.json = true
+    config.json = true
 
     profile.exec(['enable-2fa', 'auth-only'], err => {
       t.match(
@@ -716,7 +723,7 @@ t.test('enable-2fa', t => {
   })
 
   t.test('no support for --parseable output', t => {
-    npm.flatOptions.parseable = true
+    config.parseable = true
 
     profile.exec(['enable-2fa', 'auth-only'], err => {
       t.match(
@@ -745,7 +752,7 @@ t.test('enable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
     })
@@ -774,7 +781,7 @@ t.test('enable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
     })
@@ -795,7 +802,7 @@ t.test('enable-2fa', t => {
   t.test('no auth found', t => {
     npm.config.getCredentialsByURI = () => ({})
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
     })
     const profile = new Profile(npm)
@@ -814,18 +821,16 @@ t.test('enable-2fa', t => {
     t.plan(10)
 
     // mock legacy basic auth style
-    npm.config = {
-      getCredentialsByURI (reg) {
-        t.equal(reg, flatOptions.registry, 'should use expected registry')
-        return { auth: Buffer.from('foo:bar').toString('base64') }
-      },
-      setCredentialsByURI (registry, { token }) {
-        t.equal(registry, flatOptions.registry, 'should set expected registry')
-        t.equal(token, 'token', 'should set expected token')
-      },
-      save (type) {
-        t.equal(type, 'user', 'should save to user config')
-      },
+    npm.config.getCredentialsByURI = (reg) => {
+      t.equal(reg, flatOptions.registry, 'should use expected registry')
+      return { auth: Buffer.from('foo:bar').toString('base64') }
+    }
+    npm.config.setCredentialsByURI = (registry, { token }) => {
+      t.equal(registry, flatOptions.registry, 'should set expected registry')
+      t.equal(token, 'token', 'should set expected token')
+    }
+    npm.config.save = (type) => {
+      t.equal(type, 'user', 'should save to user config')
     }
 
     const npmProfile = {
@@ -876,7 +881,7 @@ t.test('enable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       '../../lib/utils/read-user-info.js': readUserInfo,
@@ -898,12 +903,10 @@ t.test('enable-2fa', t => {
   t.test('from token and set otp, retries on pending and verifies with qrcode', t => {
     t.plan(4)
 
-    npm.flatOptions.otp = '1234'
+    flatOptions.otp = '1234'
 
-    npm.config = {
-      getCredentialsByURI () {
-        return { token: 'token' }
-      },
+    npm.config.getCredentialsByURI = () => {
+      return { token: 'token' }
     }
 
     let setCount = 0
@@ -980,7 +983,7 @@ t.test('enable-2fa', t => {
       generate: (url, cb) => cb('qrcode'),
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       'qrcode-terminal': qrcode,
@@ -1000,12 +1003,10 @@ t.test('enable-2fa', t => {
   })
 
   t.test('from token and set otp, retrieves invalid otp', t => {
-    npm.flatOptions.otp = '1234'
+    flatOptions.otp = '1234'
 
-    npm.config = {
-      getCredentialsByURI () {
-        return { token: 'token' }
-      },
+    npm.config.getCredentialsByURI = () => {
+      return { token: 'token' }
     }
 
     const npmProfile = {
@@ -1034,7 +1035,7 @@ t.test('enable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       '../../lib/utils/read-user-info.js': readUserInfo,
@@ -1052,12 +1053,11 @@ t.test('enable-2fa', t => {
   })
 
   t.test('from token auth provides --otp config arg', t => {
-    npm.flatOptions.otp = '123456'
+    flatOptions.otp = '123456'
+    flatOptions.otp = '123456'
 
-    npm.config = {
-      getCredentialsByURI (reg) {
-        return { token: 'token' }
-      },
+    npm.config.getCredentialsByURI = (reg) => {
+      return { token: 'token' }
     }
 
     const npmProfile = {
@@ -1081,7 +1081,7 @@ t.test('enable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       '../../lib/utils/read-user-info.js': readUserInfo,
@@ -1102,10 +1102,8 @@ t.test('enable-2fa', t => {
   })
 
   t.test('missing tfa from user profile', t => {
-    npm.config = {
-      getCredentialsByURI (reg) {
-        return { token: 'token' }
-      },
+    npm.config.getCredentialsByURI = (reg) => {
+      return { token: 'token' }
     }
 
     const npmProfile = {
@@ -1132,7 +1130,7 @@ t.test('enable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       '../../lib/utils/read-user-info.js': readUserInfo,
@@ -1153,10 +1151,8 @@ t.test('enable-2fa', t => {
   })
 
   t.test('defaults to auth-and-writes permission if no mode specified', t => {
-    npm.config = {
-      getCredentialsByURI (reg) {
-        return { token: 'token' }
-      },
+    npm.config.getCredentialsByURI = (reg) => {
+      return { token: 'token' }
     }
 
     const npmProfile = {
@@ -1183,7 +1179,7 @@ t.test('enable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       '../../lib/utils/read-user-info.js': readUserInfo,
@@ -1217,7 +1213,7 @@ t.test('disable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
     })
@@ -1242,7 +1238,7 @@ t.test('disable-2fa', t => {
         return userProfile
       },
       async set (newProfile, conf) {
-        t.deepEqual(
+        t.same(
           newProfile,
           {
             tfa: {
@@ -1279,7 +1275,7 @@ t.test('disable-2fa', t => {
     })
 
     t.test('default output', t => {
-      const Profile = requireInject('../../lib/profile.js', {
+      const Profile = t.mock('../../lib/profile.js', {
         ...mocks,
         'npm-profile': npmProfile(t),
         '../../lib/utils/read-user-info.js': readUserInfo(t),
@@ -1300,9 +1296,9 @@ t.test('disable-2fa', t => {
     })
 
     t.test('--json', t => {
-      npm.flatOptions.json = true
+      config.json = true
 
-      const Profile = requireInject('../../lib/profile.js', {
+      const Profile = t.mock('../../lib/profile.js', {
         ...mocks,
         'npm-profile': npmProfile(t),
         '../../lib/utils/read-user-info.js': readUserInfo(t),
@@ -1313,7 +1309,7 @@ t.test('disable-2fa', t => {
         if (err)
           throw err
 
-        t.deepEqual(
+        t.same(
           JSON.parse(result),
           { tfa: false },
           'should output json already disabled msg'
@@ -1323,9 +1319,9 @@ t.test('disable-2fa', t => {
     })
 
     t.test('--parseable', t => {
-      npm.flatOptions.parseable = true
+      config.parseable = true
 
-      const Profile = requireInject('../../lib/profile.js', {
+      const Profile = t.mock('../../lib/profile.js', {
         ...mocks,
         'npm-profile': npmProfile(t),
         '../../lib/utils/read-user-info.js': readUserInfo(t),
@@ -1351,14 +1347,14 @@ t.test('disable-2fa', t => {
   t.test('--otp config already set', t => {
     t.plan(3)
 
-    npm.flatOptions.otp = '123456'
+    flatOptions.otp = '123456'
 
     const npmProfile = {
       async get () {
         return userProfile
       },
       async set (newProfile, conf) {
-        t.deepEqual(
+        t.same(
           newProfile,
           {
             tfa: {
@@ -1388,7 +1384,7 @@ t.test('disable-2fa', t => {
       },
     }
 
-    const Profile = requireInject('../../lib/profile.js', {
+    const Profile = t.mock('../../lib/profile.js', {
       ...mocks,
       'npm-profile': npmProfile,
       '../../lib/utils/read-user-info.js': readUserInfo,

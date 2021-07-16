@@ -2,27 +2,42 @@ const os = require('os')
 const path = require('path')
 const pacote = require('pacote')
 const table = require('text-table')
-const color = require('ansicolors')
+const color = require('chalk')
 const styles = require('ansistyles')
 const npa = require('npm-package-arg')
 const pickManifest = require('npm-pick-manifest')
 
 const Arborist = require('@npmcli/arborist')
 
-const output = require('./utils/output.js')
-const usageUtil = require('./utils/usage.js')
 const ansiTrim = require('./utils/ansi-trim.js')
+const ArboristWorkspaceCmd = require('./workspaces/arborist-cmd.js')
 
-class Outdated {
-  constructor (npm) {
-    this.npm = npm
+class Outdated extends ArboristWorkspaceCmd {
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get description () {
+    return 'Check for outdated packages'
   }
 
   /* istanbul ignore next - see test/lib/load-all-commands.js */
-  get usage () {
-    return usageUtil('outdated',
-      'npm outdated [[<@scope>/]<pkg> ...]'
-    )
+  static get name () {
+    return 'outdated'
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get usage () {
+    return ['[[<@scope>/]<pkg> ...]']
+  }
+
+  /* istanbul ignore next - see test/lib/load-all-commands.js */
+  static get params () {
+    return [
+      'all',
+      'json',
+      'long',
+      'parseable',
+      'global',
+      'workspace',
+    ]
   }
 
   exec (args, cb) {
@@ -30,21 +45,24 @@ class Outdated {
   }
 
   async outdated (args) {
-    this.opts = this.npm.flatOptions
-
     const global = path.resolve(this.npm.globalDir, '..')
-    const where = this.opts.global
+    const where = this.npm.config.get('global')
       ? global
       : this.npm.prefix
 
     const arb = new Arborist({
-      ...this.opts,
+      ...this.npm.flatOptions,
       path: where,
     })
 
     this.edges = new Set()
     this.list = []
     this.tree = await arb.loadActual()
+
+    if (this.workspaceNames && this.workspaceNames.length) {
+      this.filterSet =
+        arb.workspaceDependencySet(this.tree, this.workspaceNames)
+    }
 
     if (args.length !== 0) {
       // specific deps
@@ -53,7 +71,7 @@ class Outdated {
         this.getEdges(nodes, 'edgesIn')
       }
     } else {
-      if (this.opts.all) {
+      if (this.npm.config.get('all')) {
         // all deps in tree
         const nodes = this.tree.inventory.values()
         this.getEdges(nodes, 'edgesOut')
@@ -67,17 +85,17 @@ class Outdated {
     }))
 
     // sorts list alphabetically
-    const outdated = this.list.sort((a, b) => a.name.localeCompare(b.name))
+    const outdated = this.list.sort((a, b) => a.name.localeCompare(b.name, 'en'))
 
     // return if no outdated packages
-    if (outdated.length === 0 && !this.opts.json)
+    if (outdated.length === 0 && !this.npm.config.get('json'))
       return
 
     // display results
-    if (this.opts.json)
-      output(this.makeJSON(outdated))
-    else if (this.opts.parseable)
-      output(this.makeParseable(outdated))
+    if (this.npm.config.get('json'))
+      this.npm.output(this.makeJSON(outdated))
+    else if (this.npm.config.get('parseable'))
+      this.npm.output(this.makeParseable(outdated))
     else {
       const outList = outdated.map(x => this.makePretty(x))
       const outHead = ['Package',
@@ -88,24 +106,30 @@ class Outdated {
         'Depended by',
       ]
 
-      if (this.opts.long)
+      if (this.npm.config.get('long'))
         outHead.push('Package Type', 'Homepage')
       const outTable = [outHead].concat(outList)
 
-      if (this.opts.color)
+      if (this.npm.color)
         outTable[0] = outTable[0].map(heading => styles.underline(heading))
 
       const tableOpts = {
         align: ['l', 'r', 'r', 'r', 'l'],
         stringLength: s => ansiTrim(s).length,
       }
-      output(table(outTable, tableOpts))
+      this.npm.output(table(outTable, tableOpts))
     }
   }
 
   getEdges (nodes, type) {
-    if (!nodes)
-      return this.getEdgesOut(this.tree)
+    // when no nodes are provided then it should only read direct deps
+    // from the root node and its workspaces direct dependencies
+    if (!nodes) {
+      this.getEdgesOut(this.tree)
+      this.getWorkspacesEdges()
+      return
+    }
+
     for (const node of nodes) {
       type === 'edgesOut'
         ? this.getEdgesOut(node)
@@ -115,23 +139,52 @@ class Outdated {
 
   getEdgesIn (node) {
     for (const edge of node.edgesIn)
-      this.edges.add(edge)
+      this.trackEdge(edge)
   }
 
   getEdgesOut (node) {
-    if (this.opts.global) {
+    // TODO: normalize usage of edges and avoid looping through nodes here
+    if (this.npm.config.get('global')) {
       for (const child of node.children.values())
-        this.edges.add(child)
+        this.trackEdge(child)
     } else {
       for (const edge of node.edgesOut.values())
-        this.edges.add(edge)
+        this.trackEdge(edge)
+    }
+  }
+
+  trackEdge (edge) {
+    const filteredOut =
+      edge.from
+        && this.filterSet
+        && this.filterSet.size > 0
+        && !this.filterSet.has(edge.from.target || edge.from)
+
+    if (filteredOut)
+      return
+
+    this.edges.add(edge)
+  }
+
+  getWorkspacesEdges (node) {
+    if (this.npm.config.get('global'))
+      return
+
+    for (const edge of this.tree.edgesOut.values()) {
+      const workspace = edge
+        && edge.to
+        && edge.to.target
+        && edge.to.target.isWorkspace
+
+      if (workspace)
+        this.getEdgesOut(edge.to.target)
     }
   }
 
   async getPackument (spec) {
     const packument = await pacote.packument(spec, {
       ...this.npm.flatOptions,
-      fullMetadata: this.npm.flatOptions.long,
+      fullMetadata: this.npm.config.get('long'),
       preferOnline: true,
     })
     return packument
@@ -148,7 +201,7 @@ class Outdated {
       : edge.dev ? 'devDependencies'
       : 'dependencies'
 
-    for (const omitType of this.opts.omit || []) {
+    for (const omitType of this.npm.config.get('omit')) {
       if (node[omitType])
         return
     }
@@ -176,6 +229,10 @@ class Outdated {
         current !== wanted.version ||
         wanted.version !== latest.version
       ) {
+        const dependent = edge.from ?
+          this.maybeWorkspaceName(edge.from)
+          : 'global'
+
         this.list.push({
           name: edge.name,
           path,
@@ -184,7 +241,7 @@ class Outdated {
           location,
           wanted: wanted.version,
           latest: latest.version,
-          dependent: edge.from ? edge.from.name : 'global',
+          dependent,
           homepage: packument.homepage,
         })
       }
@@ -198,6 +255,23 @@ class Outdated {
       )
         throw err
     }
+  }
+
+  maybeWorkspaceName (node) {
+    if (!node.isWorkspace)
+      return node.name
+
+    const humanOutput =
+      !this.npm.config.get('json') && !this.npm.config.get('parseable')
+
+    const workspaceName =
+      humanOutput
+        ? node.pkgid
+        : node.name
+
+    return this.npm.color && humanOutput
+      ? color.green(workspaceName)
+      : workspaceName
   }
 
   // formatting functions
@@ -215,12 +289,12 @@ class Outdated {
 
     const columns = [name, current, wanted, latest, location, dependent]
 
-    if (this.opts.long) {
+    if (this.npm.config.get('long')) {
       columns[6] = type
       columns[7] = homepage
     }
 
-    if (this.opts.color) {
+    if (this.npm.color) {
       columns[0] = color[current === wanted ? 'yellow' : 'red'](columns[0]) // current
       columns[2] = color.green(columns[2]) // wanted
       columns[3] = color.magenta(columns[3]) // latest
@@ -250,7 +324,7 @@ class Outdated {
         name + '@' + latest,
         dependent,
       ]
-      if (this.opts.long)
+      if (this.npm.config.get('long'))
         out.push(type, homepage)
 
       return out.join(':')
@@ -277,7 +351,7 @@ class Outdated {
         dependent,
         location: path,
       }
-      if (this.opts.long) {
+      if (this.npm.config.get('long')) {
         out[name].type = type
         out[name].homepage = homepage
       }
